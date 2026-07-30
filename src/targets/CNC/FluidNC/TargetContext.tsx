@@ -26,6 +26,7 @@ import { useDatasContext, useSettingsContextFn } from "../../../contexts"
 import { processor } from "./processor"
 import { isVerboseOnly } from "./stream"
 import { eventsList, variablesList } from "."
+import { ingestStatus, ingestAlarmFastPath } from "./eventMacros"
 import {
     isOk,
     isStatus,
@@ -210,6 +211,9 @@ const TargetContextProvider = ({ children }: TargetContextProviderProps) => {
                 if (response.sd) {
                     setStreamStatus(response.sd)
                 }
+                // Event-triggered silent macros: feed this tick's derived state/spindle
+                // values to the edge-detection engine (see ./eventMacros.ts).
+                ingestStatus(response.status?.state, response.rpm?.value)
                 //more to set+
                 //....
             }
@@ -221,6 +225,7 @@ const TargetContextProvider = ({ children }: TargetContextProviderProps) => {
                 setMessage("")
                 setStatus({ state: "Alarm" })
                 eventsList.emit("alarm", data)
+                ingestAlarmFastPath()
             }
 
             //error

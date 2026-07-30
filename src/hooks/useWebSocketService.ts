@@ -4,6 +4,7 @@ import { WebSocketAdapter } from "../Services/WebSocketAdapter";
 import { useUiContext, useToastsContext, useModalsContext, useHttpQueueContext, useSettingsContext } from "../contexts";
 import { useTargetContext } from "../targets";
 import { dispatchToExtensions } from "../components/Helpers";
+import { ingestConnectionState } from "../targets/CNC/FluidNC/eventMacros";
 
 let webSocketServiceInstance : WebSocketService | undefined;
 
@@ -63,6 +64,7 @@ export function useWebSocketService() : WebSocketService {
             // Set up connection state listener
             webSocketServiceInstance.setConnectionStateListener((state) => {
                 connection.setConnectionState(state);
+                ingestConnectionState(state.connected);
             });
 
             // Set up data routing
