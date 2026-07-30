@@ -54,8 +54,19 @@ interface SilentFetchOptions {
 
 // Fire a GET request in the background without opening/navigating a tab.
 // Used by manual URI_SILENT / [SILENT] macros and by the event-macros engine.
-// Ignores the response body; logs success/failure only. Behavior with no
-// `options` argument is byte-identical to the pre-extraction implementation.
+// Ignores the response body; logs success/failure only.
+//
+// mode: "no-cors" (rather than "cors") because the typical target here is a
+// LAN device (e.g. a Tasmota smart plug) with no CORS headers - under "cors"
+// the browser rejects reading such a response and the promise rejects into
+// .catch(), logging a misleading "failed" even though the GET reached the
+// device and ran (CORS only blocks reading the response, not sending the
+// request). Under "no-cors" the response is opaque: response.ok/.status are
+// always false/0 regardless of what actually happened at the target, so
+// .then() can only honestly report that the request was sent, not that it
+// succeeded at the HTTP level. .catch() still means something real under
+// no-cors - it only fires for network-level failures (DNS, connection
+// refused, timeout), not CORS.
 function silentFetch(uri: string, options?: SilentFetchOptions): void {
     const controller = options?.timeoutMs ? new AbortController() : undefined
     const timeoutHandle = controller
@@ -63,14 +74,14 @@ function silentFetch(uri: string, options?: SilentFetchOptions): void {
         : undefined
     const myInit: RequestInit = {
         method: "GET",
-        mode: "cors",
+        mode: "no-cors",
         cache: "default",
         ...(controller ? { signal: controller.signal } : {}),
     }
     fetch(uri, myInit)
-        .then((response) => {
+        .then(() => {
             if (timeoutHandle) clearTimeout(timeoutHandle)
-            console.log(response.ok ? "Request succeeded" : "Request failed")
+            console.log("Request sent")
         })
         .catch((error) => {
             if (timeoutHandle) clearTimeout(timeoutHandle)
