@@ -78,7 +78,10 @@ const keyboardEventHandlerDown = (e: KeyboardEvent): void => {
         )
     )
         keyval += e.key.toUpperCase()
-    let cmdMatch: string | null = null
+    // Collect every binding that matches this key, not just the last one -
+    // the same key can intentionally be bound to more than one action
+    // (e.g. sharing a key between the XY and Z distance shortcuts).
+    const cmdMatches: string[] = []
     const keysRefs: string[] = ["keymap", "macros"]
     keysRefs.forEach((list: string) => {
         const keyMapObj = useUiContextFn.getValue(list)
@@ -92,16 +95,16 @@ const keyboardEventHandlerDown = (e: KeyboardEvent): void => {
                         sub.value?.toUpperCase() == keyval?.toUpperCase() &&
                         document.getElementById(element.id)
                     ) {
-                        cmdMatch = element.id
+                        cmdMatches.push(element.id)
                     }
                 })
             })
         }
     })
 
-    //console.log("KeyMap override match, key = " + e.key + ", cmd= " + cmdMatch)
+    //console.log("KeyMap override match, key = " + e.key + ", cmds= " + cmdMatches.join(","))
 
-    if (cmdMatch) {
+    if (cmdMatches.length > 0) {
         e.preventDefault()
         const autorepeat = useUiContextFn.getValue("enableautorepeat")
         if (keyTracker.keyState == 1 && !autorepeat) {
@@ -118,10 +121,12 @@ const keyboardEventHandlerDown = (e: KeyboardEvent): void => {
         }
         keyTracker.lastkey = keyval
 
-        const element = document.getElementById(cmdMatch)
-        if (element) {
-            element.click()
-        }
+        cmdMatches.forEach((cmdMatch) => {
+            const element = document.getElementById(cmdMatch)
+            if (element) {
+                element.click()
+            }
+        })
     }
 }
 let intialisationDone = false
