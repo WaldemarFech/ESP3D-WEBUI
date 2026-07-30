@@ -23,6 +23,7 @@ import { Cast } from "preact-feather"
 import { useUiContext, useUiContextFn } from "../../contexts"
 import { ButtonImg, FullScreenButton, CloseButton, ContainerHelper } from "../Controls"
 import { useTargetCommands } from "../../hooks"
+import { silentFetch } from "../Helpers"
 import { iconsFeather } from "../Images"
 import {
     iconsTarget,
@@ -92,27 +93,6 @@ const MacrosPanel: FunctionalComponent = () => {
         acc.push(item)
         return acc
     }, [])
-    // Fire a GET request in the background without opening/navigating a tab
-    // - used for URI_SILENT and for the legacy [SILENT] prefix on URI
-    const silentFetch = (uri: string): void => {
-        const myInit: RequestInit = {
-            method: "GET",
-            mode: "cors",
-            cache: "default",
-        }
-        fetch(uri, myInit)
-            .then((response) => {
-                if (response.ok) {
-                    console.log("Request succeeded")
-                } else {
-                    console.log("Request failed")
-                }
-            })
-            .catch((error) => {
-                console.log(`Request failed: ${  error.message}`)
-            })
-    }
-
     const processMacro = (action: string, type: MacroType): void => {
         switch (type) {
             case "FS":

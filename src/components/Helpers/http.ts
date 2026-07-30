@@ -47,6 +47,40 @@ const espHttpURL = (base: string = "", args: Record<string, string> = {}): strin
     return url.toString()
 }
 
+interface SilentFetchOptions {
+    timeoutMs?: number
+    onSettled?: () => void   // called once the request resolves/rejects/times out, for in-flight tracking
+}
+
+// Fire a GET request in the background without opening/navigating a tab.
+// Used by manual URI_SILENT / [SILENT] macros and by the event-macros engine.
+// Ignores the response body; logs success/failure only. Behavior with no
+// `options` argument is byte-identical to the pre-extraction implementation.
+function silentFetch(uri: string, options?: SilentFetchOptions): void {
+    const controller = options?.timeoutMs ? new AbortController() : undefined
+    const timeoutHandle = controller
+        ? setTimeout(() => controller.abort(), options!.timeoutMs)
+        : undefined
+    const myInit: RequestInit = {
+        method: "GET",
+        mode: "cors",
+        cache: "default",
+        ...(controller ? { signal: controller.signal } : {}),
+    }
+    fetch(uri, myInit)
+        .then((response) => {
+            if (timeoutHandle) clearTimeout(timeoutHandle)
+            console.log(response.ok ? "Request succeeded" : "Request failed")
+        })
+        .catch((error) => {
+            if (timeoutHandle) clearTimeout(timeoutHandle)
+            console.log(`Request failed: ${error.message}`)
+        })
+        .finally(() => {
+            options?.onSettled?.()
+        })
+}
+
 function isLimitedEnvironment(mode: string): boolean {
     let sitesList = [
         //google / android Captive Portal Detection
@@ -81,4 +115,5 @@ function isLimitedEnvironment(mode: string): boolean {
     return false
 }
 
-export { espHttpURL, getCookie, isLimitedEnvironment }
+export { espHttpURL, getCookie, isLimitedEnvironment, silentFetch }
+export type { SilentFetchOptions }

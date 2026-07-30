@@ -16,7 +16,7 @@
  License along with This code; if not, write to the Free Software
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-import { espHttpURL, getCookie, isLimitedEnvironment } from "./http"
+import { espHttpURL, getCookie, isLimitedEnvironment, silentFetch } from "./http"
 import { getBrowserTime } from "./time"
 import {
     createComponent,
@@ -87,6 +87,7 @@ export {
     isFloat,
     BitsArray,
     useStoredState,
+    silentFetch,
 }
 
 // Re-export types
@@ -95,3 +96,4 @@ export type { Variable } from "./strings"
 export type { BitsArrayType, HasId } from "./arrays"
 export type { IframeCache, MessageData } from "./html"
 export type { FileEntry } from "./filters"
+export type { SilentFetchOptions } from "./http"
