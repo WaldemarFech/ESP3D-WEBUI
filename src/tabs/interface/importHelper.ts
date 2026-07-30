@@ -211,6 +211,7 @@ function formatItem(itemData: RawItemData, index: number = -1, origineId: string
                 case "event":
                     newItem.type = "select"
                     newItem.label = "S229"
+                    newItem.help = "S236"
                     newItem.options = [
                         { label: "FL13", value: "spindle_on" },
                         { label: "FL14", value: "spindle_off" },

@@ -238,6 +238,7 @@
   "S233": "Löst im Hintergrund einen stillen HTTP-GET aus, wenn das gewählte Maschinenereignis eintritt. Dies ist eine netzwerkabhängige Komfortfunktion, kein Sicherheitsschalter – der Browser-Tab muss geöffnet und verbunden bleiben, bei einem WebSocket-Ausfall passiert nichts. Wenn die WebUI auf mehreren Geräten gleichzeitig geöffnet ist, vermeiden Sie TOGGLE-Endpunkte und bevorzugen Sie explizite EIN/AUS-Endpunkte.",
   "S234": "Nach dem Ereignis so lange warten, den Zustand erneut prüfen und erst dann auslösen. Auch als bewusste Verzögerung nutzbar – z. B. den Staubsauger nach dem Spindelstopp noch kurz weiterlaufen lassen.",
   "S235": "Mindestzeit zwischen zwei Auslösungen dieser Regel (Untergrenze 500 ms, erzwungen).",
+  "S236": "Jedes Ereignis löst unabhängig aus – door_closed bedeutet nicht automatisch cycle_start; binden Sie es explizit, wenn beim Schließen der Tür etwas fortgesetzt werden soll. Im Modus für dynamische Leistung (M4) können spindle_on/spindle_off während des Schnitts fälschlich auslösen – bevorzugen Sie in diesem Modus cycle_start/cycle_stop zum Schalten der Netzspannung.",
   "btn+X": "X+",
   "btn-X": "X-",
   "btnHX": "X-Achse referenzieren",
