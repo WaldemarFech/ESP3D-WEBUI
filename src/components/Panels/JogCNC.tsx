@@ -132,26 +132,6 @@ const JogPanel = () => {
     const { positions } = useTargetContext()
     const id = "jogPanel"
 
-    // Position the (fixed-position, viewport-anchored) tooltip above the
-    // hovered element, clamped so it always stays fully inside the window -
-    // position: fixed escapes the jog panel's overflow clipping, unlike the
-    // default position: absolute tooltip.
-    const positionPortalTooltip = (e: any) => {
-        const rect = e.currentTarget.getBoundingClientRect()
-        const margin = 8
-        // Shrink to fit narrow windows too - on a wide window this is 110px
-        // (the CSS tooltip max-width, 220px, halved); on a narrow window it
-        // shrinks so minX/maxX never invert (which would let the right-side
-        // bound win and push the box off the left edge)
-        const halfTooltip = Math.min(110, window.innerWidth / 2 - margin)
-        const minX = halfTooltip + margin
-        const maxX = window.innerWidth - halfTooltip - margin
-        const x = Math.min(Math.max(rect.left + rect.width / 2, minX), maxX)
-        const y = rect.top - margin
-        e.currentTarget.style.setProperty("--tooltip-x", `${x}px`)
-        e.currentTarget.style.setProperty("--tooltip-y", `${y}px`)
-    }
-
     const onChangeAxis = (e: any) => {
         let value = e.target ? e.target.value : e
         setCurrentSelectedAxis(value)
