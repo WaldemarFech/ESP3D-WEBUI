@@ -50,6 +50,7 @@ import {
 import { dispatchToExtensions, isFullscreenActive, isFullscreenSupported, getFullscreenElement, invalidateIframeCache } from "./html"
 import { sortedFilesList, filterResultFiles } from "./filters"
 import { useStoredState } from "./storedState"
+import { positionPortalTooltip } from "./tooltip"
 
 export {
     beautifyJSONString,
@@ -88,6 +89,7 @@ export {
     BitsArray,
     useStoredState,
     silentFetch,
+    positionPortalTooltip,
 }
 
 // Re-export types

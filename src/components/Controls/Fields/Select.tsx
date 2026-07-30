@@ -23,7 +23,8 @@ import { useSettingsContext, useUiContextFn } from "../../../contexts"
 import { T } from "../../Translations"
 import {
     generateDependIds,
-    checkDependencies
+    checkDependencies,
+    positionPortalTooltip,
 } from "../../Helpers"
 import type { DependencyCondition } from "../../../types/dependencies.types"
 
@@ -134,8 +135,9 @@ const Select: FunctionalComponent<SelectProps> = ({
     }, [value])
 
     return (
-        <div class={`${inline ? "column" : ""} ${help ? "tooltip tooltip-top" : ""}`}
-                data-tooltip={T(help)}>
+        <div class={`${inline ? "column" : ""} ${help ? "tooltip tooltip-portal" : ""}`}
+                data-tooltip={T(help)}
+                onMouseEnter={help ? positionPortalTooltip : undefined}>
             <select
                 class={`form-select  ${inline ? "column" : ""}`}
                 {...props}

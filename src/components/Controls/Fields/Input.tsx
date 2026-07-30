@@ -39,6 +39,7 @@ import {
 import {
     generateDependIds,
     checkDependencies,
+    positionPortalTooltip,
 } from "../../Helpers"
 import type { DependencyCondition } from "../../../types/dependencies.types"
 
@@ -372,8 +373,9 @@ const Input: FunctionalComponent<InputProps> = ({
         <div
             class={`input-group ${inline ? "column" : ""} ${
                 button ? "has-button-submit" : "no-button-submit"
-            } ${help ? "tooltip" : ""}`}
+            } ${help ? "tooltip tooltip-portal" : ""}`}
             data-tooltip={T(help)}
+            onMouseEnter={help ? positionPortalTooltip : undefined}
         >
             <input
                 disabled={disabled}

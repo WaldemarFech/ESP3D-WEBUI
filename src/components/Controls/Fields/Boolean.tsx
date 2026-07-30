@@ -26,6 +26,7 @@ import {
 import {
     generateDependIds,
     checkDependencies,
+    positionPortalTooltip,
 } from "../../Helpers"
 import type { DependencyCondition } from "../../../types/dependencies.types"
 
@@ -97,8 +98,9 @@ const Boolean: FunctionalComponent<BooleanProps> = ({
     }, [value])
     return (
         <label
-            class={`form-switch ${help ? "tooltip tooltip-right" : ""}`}
+            class={`form-switch ${help ? "tooltip tooltip-portal" : ""}`}
             data-tooltip={T(help)}
+            onMouseEnter={help ? positionPortalTooltip : undefined}
         >
             <input
                 type="checkbox"
