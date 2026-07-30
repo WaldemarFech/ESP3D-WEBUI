@@ -63,7 +63,27 @@ const FormGroup: FunctionalComponent<FormGroupProps> = ({
             )}`}
             id={id ? `group-${  id}` : ""}
         >
-            <div class={inline ? "columns mt-2" : "flex-cols"}>
+            <div
+                class={
+                    // Spectre's .columns is a flex grid ROW: it applies a
+                    // -.4rem margin-left/right expecting .column-classed
+                    // children to cancel it out with matching padding. For
+                    // an inline boolean field, FormGroup's own <label>
+                    // below is unconditionally d-none (Boolean.tsx renders
+                    // its own self-contained label+switch instead), so
+                    // there's no second column here to justify the grid-row
+                    // treatment - applying it anyway leaves the negative
+                    // margin uncancelled, bleeding the control a few px
+                    // outside whatever container it sits in (invisible in
+                    // the roomy Settings panel, but visibly breaks a
+                    // tightly bordered fieldset like an event-macro row).
+                    inline
+                        ? type == "boolean"
+                            ? "mt-2"
+                            : "columns mt-2"
+                        : "flex-cols"
+                }
+            >
                 {!(type == "list" || type == "mask" || type == "xmask") &&
                     label && (
                         <label

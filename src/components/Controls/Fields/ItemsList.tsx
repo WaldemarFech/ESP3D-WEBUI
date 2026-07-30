@@ -26,6 +26,7 @@ import {
     generateUID,
     generateDependIds,
     checkDependencies,
+    silentFetch,
 } from "../../Helpers"
 import { Field } from "../../Controls"
 import { formatItem } from "../../../tabs/interface/importHelper"
@@ -38,6 +39,7 @@ import {
     Minimize2,
     Flag,
     Zap,
+    Play,
 } from "preact-feather"
 import defaultPanel from "./def_panel.json"
 import defaultMacro from "./def_macro.json"
@@ -170,6 +172,24 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
         completeList.splice(index, 1)
         setValue(completeList)
     }
+    // eventmacros only: fire this row's current action URL right now, via
+    // silentFetch directly - completely bypasses eventMacros.ts, so no
+    // cooldown/in-flight/settle-delay can ever hold back or drop a manual
+    // test. Reads the row's live in-memory value, so this works even while
+    // still editing, before Save.
+    const eventmacrosActionField =
+        idList == "eventmacros"
+            ? value.find((f: FieldItem) => f.name == "action")
+            : undefined
+    const eventmacrosActionValue = eventmacrosActionField
+        ? String(eventmacrosActionField.value || "").trim()
+        : ""
+    const testAction = (e: TargetedMouseEvent<HTMLButtonElement>) => {
+        useUiContextFn.haptic()
+        e.currentTarget.blur()
+        if (eventmacrosActionValue.length == 0) return
+        silentFetch(eventmacrosActionValue)
+    }
     useEffect(() => {
         //to update state when import- but why ?
         if (setValue) setValue(null, true)
@@ -299,6 +319,16 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                                     />
                                 )}
 
+                            {idList == "eventmacros" && (
+                                <ButtonImg
+                                    m2
+                                    tooltip
+                                    data-tooltip={T("S238")}
+                                    disabled={eventmacrosActionValue.length == 0}
+                                    icon={<Play />}
+                                    onClick={testAction}
+                                />
+                            )}
                             {!nodelete && (
                                 <ButtonImg
                                     m2

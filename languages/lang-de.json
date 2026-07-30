@@ -240,6 +240,7 @@
   "S235": "Mindestzeit zwischen zwei Auslösungen dieser Regel (Untergrenze 500 ms, erzwungen).",
   "S236": "Jedes Ereignis löst unabhängig aus – door_closed bedeutet nicht automatisch cycle_start; binden Sie es explizit, wenn beim Schließen der Tür etwas fortgesetzt werden soll. Im Modus für dynamische Leistung (M4) können spindle_on/spindle_off während des Schnitts fälschlich auslösen – bevorzugen Sie in diesem Modus cycle_start/cycle_stop zum Schalten der Netzspannung.",
   "S237": "Fügt eine Beispiel-Aktions-URL für das gewählte Ereignis ein (füllt nur ein leeres Feld).",
+  "S238": "Löst die Aktions-URL dieser Regel sofort testweise aus – umgeht dabei die Sperrzeit-/Bereits-läuft-/Bestätigungsverzögerung-Logik, die für echte Ereignisauslöser gilt.",
   "btn+X": "X+",
   "btn-X": "X-",
   "btnHX": "X-Achse referenzieren",
