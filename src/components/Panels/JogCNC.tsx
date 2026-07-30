@@ -32,6 +32,7 @@ import { Button, ButtonImg, FullScreenButton, CloseButton, ContainerHelper } fro
 import { useEffect, useState } from "preact/hooks"
 import { showModal } from "../Modal"
 import { useTargetContext } from "../../targets"
+import { positionPortalTooltip } from "../Helpers"
 
 let currentFeedRate: Record<string, any> = {}
 let currentJogDistanceXY: any = "-1"
@@ -549,8 +550,9 @@ const JogPanel = () => {
                                     mm
                                 </div>
                                 <div
-                                    class="flatbtn tooltip tooltip-left"
+                                    class="flatbtn tooltip tooltip-left tooltip-portal"
                                     data-tooltip={T("CN18")}
+                                    onMouseEnter={positionPortalTooltip}
                                 >
                                     <input
                                         type="radio"
@@ -566,8 +568,9 @@ const JogPanel = () => {
                                     <label for="move_xy_100">100</label>
                                 </div>
                                 <div
-                                    class="flatbtn tooltip tooltip-left"
+                                    class="flatbtn tooltip tooltip-left tooltip-portal"
                                     data-tooltip={T("CN18")}
+                                    onMouseEnter={positionPortalTooltip}
                                 >
                                     <input
                                         type="radio"
@@ -583,8 +586,9 @@ const JogPanel = () => {
                                     <label for="move_xy_50">50</label>
                                 </div>
                                 <div
-                                    class="flatbtn tooltip tooltip-left"
+                                    class="flatbtn tooltip tooltip-left tooltip-portal"
                                     data-tooltip={T("CN18")}
+                                    onMouseEnter={positionPortalTooltip}
                                 >
                                     <input
                                         type="radio"
@@ -600,8 +604,9 @@ const JogPanel = () => {
                                     <label for="move_xy_10">10</label>
                                 </div>
                                 <div
-                                    class="flatbtn tooltip tooltip-left"
+                                    class="flatbtn tooltip tooltip-left tooltip-portal"
                                     data-tooltip={T("CN18")}
+                                    onMouseEnter={positionPortalTooltip}
                                 >
                                     <input
                                         type="radio"
@@ -617,8 +622,9 @@ const JogPanel = () => {
                                     <label for="move_xy_1">1</label>
                                 </div>
                                 <div
-                                    class="flatbtn tooltip tooltip-left"
+                                    class="flatbtn tooltip tooltip-left tooltip-portal"
                                     data-tooltip={T("CN18")}
+                                    onMouseEnter={positionPortalTooltip}
                                 >
                                     <input
                                         type="radio"
@@ -708,8 +714,9 @@ const JogPanel = () => {
                                             mm
                                         </div>
                                         <div
-                                            class="flatbtn tooltip tooltip-left"
+                                            class="flatbtn tooltip tooltip-left tooltip-portal"
                                             data-tooltip={T("CN18")}
+                                            onMouseEnter={positionPortalTooltip}
                                         >
                                             <input
                                                 type="radio"
@@ -725,8 +732,9 @@ const JogPanel = () => {
                                             <label for="move_z_50">50</label>
                                         </div>
                                         <div
-                                            class="flatbtn tooltip tooltip-left"
+                                            class="flatbtn tooltip tooltip-left tooltip-portal"
                                             data-tooltip={T("CN18")}
+                                            onMouseEnter={positionPortalTooltip}
                                         >
                                             <input
                                                 type="radio"
@@ -742,8 +750,9 @@ const JogPanel = () => {
                                             <label for="move_z_25">25</label>
                                         </div>
                                         <div
-                                            class="flatbtn tooltip tooltip-left"
+                                            class="flatbtn tooltip tooltip-left tooltip-portal"
                                             data-tooltip={T("CN18")}
+                                            onMouseEnter={positionPortalTooltip}
                                         >
                                             <input
                                                 type="radio"
@@ -759,8 +768,9 @@ const JogPanel = () => {
                                             <label for="move_z_10">10</label>
                                         </div>
                                         <div
-                                            class="flatbtn tooltip tooltip-left"
+                                            class="flatbtn tooltip tooltip-left tooltip-portal"
                                             data-tooltip={T("CN18")}
+                                            onMouseEnter={positionPortalTooltip}
                                         >
                                             <input
                                                 type="radio"
@@ -776,8 +786,9 @@ const JogPanel = () => {
                                             <label for="move_z_1">1</label>
                                         </div>
                                         <div
-                                            class="flatbtn tooltip tooltip-left"
+                                            class="flatbtn tooltip tooltip-left tooltip-portal"
                                             data-tooltip={T("CN18")}
+                                            onMouseEnter={positionPortalTooltip}
                                         >
                                             <input
                                                 type="radio"

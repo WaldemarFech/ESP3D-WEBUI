@@ -26,6 +26,7 @@ import { iconsFeather } from "../../components/Images"
 import { defaultPanelsList, iconsTarget, QuickButtonsBar } from "../../targets"
 import { ExtraPanelElement } from "../../components/Panels/ExtraPanel"
 import { showModal } from "../../components/Modal"
+import { positionPortalTooltip } from "../../components/Helpers"
 
 interface KeyTracker {
     keybListenerCounter: number
@@ -311,10 +312,11 @@ const Dashboard: FunctionalComponent = (): JSX.Element => {
                 {panels.list.length > 0 && (
                     <div class="dropdown">
                         <span
-                            class="dropdown-toggle btn tooltip tooltip-right m-1"
+                            class="dropdown-toggle btn tooltip tooltip-right tooltip-portal m-1"
                             tabIndex={0}
                             style="z-index: 1000"
                             data-tooltip={T("S187")}
+                            onMouseEnter={positionPortalTooltip}
                             onClick={() => {
                                 useUiContextFn.haptic()
                             }}

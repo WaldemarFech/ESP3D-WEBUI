@@ -23,6 +23,7 @@ import { useUiContextFn } from "../../contexts"
 import { useTargetContext, variablesList } from "../../targets"
 import { ButtonImg, Button, FullScreenButton, CloseButton, ContainerHelper } from "../Controls"
 import { useTargetCommands } from "../../hooks"
+import { positionPortalTooltip } from "../Helpers"
 import {
     Layers,
     Unlock,
@@ -61,8 +62,9 @@ const StatusControls: FunctionalComponent = () => {
             {status.state && (
                 <div class="status-ctrls">
                     <div
-                        class="extra-control mt-1 tooltip tooltip-bottom"
+                        class="extra-control mt-1 tooltip tooltip-bottom tooltip-portal"
                         data-tooltip={T("CN34")}
+                        onMouseEnter={positionPortalTooltip}
                     >
                         <div
                             class={`extra-control-header big-text ${

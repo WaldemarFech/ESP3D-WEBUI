@@ -28,7 +28,7 @@ import {
 } from "../../contexts"
 import { useTargetContext, eventsList } from "../../targets"
 import { ButtonImg, Field, FullScreenButton, CloseButton, ContainerHelper } from "../Controls"
-import { checkDependencies } from "../Helpers"
+import { checkDependencies, positionPortalTooltip } from "../Helpers"
 import { useTargetCommands } from "../../hooks"
 
 /*
@@ -92,8 +92,9 @@ const SpindleControls: FunctionalComponent = () => {
                                     : sv.value
                                 return (
                                     <div key={element.id}
-                                        class="extra-control mt-1 tooltip tooltip-bottom"
+                                        class="extra-control mt-1 tooltip tooltip-bottom tooltip-portal"
                                         data-tooltip={T(element.label)}
+                                        onMouseEnter={positionPortalTooltip}
                                     >
                                         <div class="extra-control-header">
                                             {T(element.label)}
@@ -319,7 +320,7 @@ const SpindlePanel: FunctionalComponent = () => {
                                     return null
                             }
                         }
-                        let classname = "tooltip"
+                        let classname = "tooltip tooltip-portal"
                         if (!item.tooltipclassic) {
                             if (item.buttons.length / 2 > index) {
                                 classname += " tooltip-right"
@@ -349,6 +350,7 @@ const SpindlePanel: FunctionalComponent = () => {
                                 className={classname}
                                 iconRight={button.iconRight}
                                 data-tooltip={T(button.tooltip)}
+                                onMouseEnter={positionPortalTooltip}
                                 onClick={(e: TargetedMouseEvent<HTMLButtonElement>) => {
                                     useUiContextFn.haptic()
                                     e.currentTarget.blur()

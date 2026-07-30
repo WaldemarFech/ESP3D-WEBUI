@@ -32,6 +32,7 @@ import {
 } from "../Controls"
 import { useTargetCommands } from "../../hooks"
 import { ContainerHelper } from "../Controls"
+import { positionPortalTooltip } from "../Helpers"
 
 /*
  * Local const
@@ -113,7 +114,8 @@ const ExtraControls: FunctionalComponent = () => {
                     if (typeof element != "undefined")
                         return (
                             <div
-                                class="extra-control mt-1 tooltip tooltip-bottom"
+                                class="extra-control mt-1 tooltip tooltip-bottom tooltip-portal"
+                                onMouseEnter={positionPortalTooltip}
                                 data-tooltip={desc}
                             >
                                 <div class="extra-control-header">{desc}</div>
@@ -129,7 +131,8 @@ const ExtraControls: FunctionalComponent = () => {
                     if (typeof element != "undefined")
                         return (
                             <div
-                                class="extra-control mt-1 tooltip tooltip-bottom"
+                                class="extra-control mt-1 tooltip tooltip-bottom tooltip-portal"
+                                onMouseEnter={positionPortalTooltip}
                                 data-tooltip={desc}
                             >
                                 <div class="extra-control-header">{desc}</div>
@@ -145,7 +148,8 @@ const ExtraControls: FunctionalComponent = () => {
                     if (typeof element != "undefined")
                         return (
                             <div
-                                class="extra-control mt-1 tooltip tooltip-bottom"
+                                class="extra-control mt-1 tooltip tooltip-bottom tooltip-portal"
+                                onMouseEnter={positionPortalTooltip}
                                 data-tooltip={desc}
                             >
                                 <div class="extra-control-header">{desc}</div>
@@ -157,10 +161,11 @@ const ExtraControls: FunctionalComponent = () => {
                 sensor.S.map((element: any, index: number) => {
                     return (
                         <div
-                            class="extra-control mt-1 tooltip tooltip-bottom"
+                            class="extra-control mt-1 tooltip tooltip-bottom tooltip-portal"
                             data-tooltip={
                                 `${T("sensor")  } (${  element.unit  })`
                             }
+                            onMouseEnter={positionPortalTooltip}
                         >
                             <div class="extra-control-header">
                                 {element.unit}

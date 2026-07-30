@@ -24,6 +24,7 @@ import { useUiContextFn } from "../../contexts"
 import { useTargetContext } from "../../targets"
 import { ButtonImg, FullScreenButton, CloseButton, ContainerHelper } from "../Controls"
 import { useTargetCommands } from "../../hooks"
+import { positionPortalTooltip } from "../Helpers"
 
 /*
  * Local const
@@ -50,8 +51,9 @@ const OverridesControls: FunctionalComponent = () => {
                         if (overrides[element.id] != null) {
                             return (
                                 <div key={element.id}
-                                    class="extra-control mt-1 tooltip tooltip-bottom"
+                                    class="extra-control mt-1 tooltip tooltip-bottom tooltip-portal"
                                     data-tooltip={T(element.tooltip)}
+                                    onMouseEnter={positionPortalTooltip}
                                 >
                                     <div class="extra-control-header">
                                         {T(element.label)}

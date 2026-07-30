@@ -25,6 +25,7 @@ import { useUiContext, useUiContextFn } from "../../contexts"
 import { useTargetContext, variablesList, eventsList } from "../../targets"
 import { ButtonImg, Field, FullScreenButton, CloseButton, ContainerHelper } from "../Controls"
 import { useTargetCommands } from "../../hooks"
+import { positionPortalTooltip } from "../Helpers"
 
 /*
  * Local const
@@ -65,8 +66,9 @@ const LaserControls: FunctionalComponent = () => {
                                 : sv.value
                             return (
                                 <div key={element.id}
-                                    class="extra-control mt-1 tooltip tooltip-bottom"
+                                    class="extra-control mt-1 tooltip tooltip-bottom tooltip-portal"
                                     data-tooltip={T(element.label)}
+                                    onMouseEnter={positionPortalTooltip}
                                 >
                                     <div class="extra-control-header">
                                         {T(element.label)}

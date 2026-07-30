@@ -20,7 +20,7 @@ import { Fragment } from "preact"
 import { useState, useEffect } from "preact/hooks"
 import { ButtonImg, Loading } from "./../Controls"
 import { useHttpQueue } from "../../hooks"
-import { espHttpURL } from "../../components/Helpers"
+import { espHttpURL, positionPortalTooltip } from "../../components/Helpers"
 import {
     useUiContextFn,
     useSettingsContextFn,
@@ -128,8 +128,9 @@ const ScanPacksList = ({ id, setValue, refreshfn }: ScanPacksListProps) => {
                                     <tr>
                                         <td>
                                             <span
-                                                class="tooltip tooltip-right"
+                                                class="tooltip tooltip-right tooltip-portal"
                                                 data-tooltip={e.name}
+                                                onMouseEnter={positionPortalTooltip}
                                             >
                                                 {id == "languagePickup"
                                                     ? getLanguageName(

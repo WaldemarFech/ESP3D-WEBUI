@@ -27,7 +27,7 @@ import {
 } from "../../contexts"
 import { useTargetContext, variablesList } from "../../targets"
 import { ButtonImg, Field, FullScreenButton, CloseButton, ContainerHelper } from "../Controls"
-import { checkDependencies } from "../Helpers"
+import { checkDependencies, positionPortalTooltip } from "../Helpers"
 import { useTargetCommands } from "../../hooks"
 
 /*
@@ -51,8 +51,9 @@ const ProbeControls: FunctionalComponent = () => {
         <Fragment>
             <div class="status-ctrls">
                 <div
-                    class="extra-control mt-1 tooltip tooltip-bottom"
+                    class="extra-control mt-1 tooltip tooltip-bottom tooltip-portal"
                     data-tooltip={T("CN103")}
+                    onMouseEnter={positionPortalTooltip}
                 >
                     <div class="extra-control-header">{T("CN104")}</div>
                     <div class="extra-control-value">

@@ -148,7 +148,7 @@ const Input: FunctionalComponent<InputProps> = ({
     )
     const { step } = rest
     const inputref = useRef<HTMLInputElement>(null)
-    const appendtooltip = prec ? "tooltip tooltip-left" : ""
+    const appendtooltip = prec ? "tooltip tooltip-left tooltip-portal" : ""
     const appendtooltipdata = prec ? T("S208").replace("$", prec.toString()) : ""
 
     const onKeyPress = (e: TargetedKeyboardEvent<HTMLInputElement>) => {
@@ -267,6 +267,7 @@ const Input: FunctionalComponent<InputProps> = ({
                     <span
                         class={`input-group-addon ${appendtooltip}`}
                         data-tooltip={appendtooltipdata}
+                        onMouseEnter={prec ? positionPortalTooltip : undefined}
                     >
                         {T(append)}
                     </span>
@@ -391,6 +392,7 @@ const Input: FunctionalComponent<InputProps> = ({
                 <span
                     class={`input-group-addon  ${appendtooltip} ${classAddition}`}
                     data-tooltip={appendtooltipdata}
+                    onMouseEnter={prec ? positionPortalTooltip : undefined}
                 >
                     {T(append)}
                 </span>

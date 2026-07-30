@@ -61,6 +61,7 @@ import { useEffect } from "preact/hooks"
 import { showModal } from "../Modal"
 import { useTargetContext, variablesList } from "../../targets"
 import { Field } from "../Controls"
+import { positionPortalTooltip } from "../Helpers"
 
 let currentVelocity = 0
 let currentJogDistance = 100
@@ -545,8 +546,9 @@ const JogPanel: FunctionalComponent = () => {
                                     }}
                                 />
                                 <div
-                                    class="flatbtn tooltip tooltip-left"
+                                    class="flatbtn tooltip tooltip-left tooltip-portal"
                                     data-tooltip={T("HP10")}
+                                    onMouseEnter={positionPortalTooltip}
                                 >
                                     <input
                                         type="radio"
@@ -562,8 +564,9 @@ const JogPanel: FunctionalComponent = () => {
                                     <label htmlFor="move_100">100</label>
                                 </div>
                                 <div
-                                    class="flatbtn tooltip tooltip-left"
+                                    class="flatbtn tooltip tooltip-left tooltip-portal"
                                     data-tooltip={T("HP10")}
+                                    onMouseEnter={positionPortalTooltip}
                                 >
                                     <input
                                         type="radio"
@@ -579,8 +582,9 @@ const JogPanel: FunctionalComponent = () => {
                                     <label htmlFor="move_50">50</label>
                                 </div>
                                 <div
-                                    class="flatbtn tooltip tooltip-left"
+                                    class="flatbtn tooltip tooltip-left tooltip-portal"
                                     data-tooltip={T("HP10")}
+                                    onMouseEnter={positionPortalTooltip}
                                 >
                                     <input
                                         type="radio"
@@ -596,8 +600,9 @@ const JogPanel: FunctionalComponent = () => {
                                     <label htmlFor="move_10">10</label>
                                 </div>
                                 <div
-                                    class="flatbtn tooltip tooltip-left"
+                                    class="flatbtn tooltip tooltip-left tooltip-portal"
                                     data-tooltip={T("HP10")}
+                                    onMouseEnter={positionPortalTooltip}
                                 >
                                     <input
                                         type="radio"
@@ -613,8 +618,9 @@ const JogPanel: FunctionalComponent = () => {
                                     <label htmlFor="move_1">1</label>
                                 </div>
                                 <div
-                                    class="flatbtn tooltip tooltip-left"
+                                    class="flatbtn tooltip tooltip-left tooltip-portal"
                                     data-tooltip={T("HP10")}
+                                    onMouseEnter={positionPortalTooltip}
                                 >
                                     <input
                                         type="radio"
