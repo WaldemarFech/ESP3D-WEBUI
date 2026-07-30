@@ -41,6 +41,7 @@ import {
 import defaultPanel from "./def_panel.json"
 import defaultMacro from "./def_macro.json"
 import defaultPolling from "./def_polling.json"
+import defaultEventMacro from "./def_eventmacro.json"
 
 interface FieldItem {
     id: string
@@ -378,7 +379,9 @@ const ItemsList: FunctionalComponent<ItemsListProps> = ({
                     ? defaultMacro
                     : id == "pollingcmds"
                       ? defaultPolling
-                      : defaultPanel
+                      : id == "eventmacros"
+                        ? defaultEventMacro
+                        : defaultPanel
             )
         )
         newItem.id = generateUID()
@@ -421,7 +424,9 @@ const ItemsList: FunctionalComponent<ItemsListProps> = ({
                                 ? T("S128")
                                 : id == "pollingcmds"
                                   ? T("S207")
-                                  : T("S156")
+                                  : id == "eventmacros"
+                                    ? T("S228")
+                                    : T("S156")
                         }
                         tooltip
                         data-tooltip={
@@ -429,7 +434,9 @@ const ItemsList: FunctionalComponent<ItemsListProps> = ({
                                 ? T("S128")
                                 : id == "pollingcmds"
                                   ? T("S207")
-                                  : T("S156")
+                                  : id == "eventmacros"
+                                    ? T("S228")
+                                    : T("S156")
                         }
                         icon={<Plus />}
                         onClick={addItem}

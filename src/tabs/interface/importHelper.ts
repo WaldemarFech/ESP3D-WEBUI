@@ -35,6 +35,7 @@ interface ItemSettingField {
     append?: string;
     options?: any[];
     newItem?: boolean;
+    regexpattern?: string;
 }
 
 // Formatted item
@@ -199,8 +200,49 @@ function formatItem(itemData: RawItemData, index: number = -1, origineId: string
                     break
                 case "action":
                     newItem.type = "text"
-                    newItem.label = "S159"
                     newItem.min = "1"
+                    if (origineId == "eventmacros") {
+                        newItem.label = "S226"
+                        newItem.regexpattern = "^https?://"
+                    } else {
+                        newItem.label = "S159"
+                    }
+                    break
+                case "event":
+                    newItem.type = "select"
+                    newItem.label = "S229"
+                    newItem.options = [
+                        { label: "FL13", value: "spindle_on" },
+                        { label: "FL14", value: "spindle_off" },
+                        { label: "FL15", value: "cycle_start" },
+                        { label: "FL16", value: "cycle_stop" },
+                        { label: "FL17", value: "hold" },
+                        { label: "FL18", value: "door_open" },
+                        { label: "FL19", value: "door_closed" },
+                        { label: "FL20", value: "alarm" },
+                        { label: "FL21", value: "ws_connect" },
+                        { label: "FL22", value: "ws_disconnect" },
+                    ]
+                    break
+                case "delay":
+                    newItem.type = "number"
+                    newItem.min = 0
+                    newItem.step = 100
+                    newItem.append = "S114"
+                    newItem.label = "S230"
+                    newItem.help = "S234"
+                    break
+                case "cooldownms":
+                    newItem.type = "number"
+                    newItem.min = 500
+                    newItem.step = 500
+                    newItem.append = "S114"
+                    newItem.label = "S231"
+                    newItem.help = "S235"
+                    break
+                case "enabled":
+                    newItem.type = "boolean"
+                    newItem.label = "S232"
                     break
                 default:
                     newItem.type = "text"

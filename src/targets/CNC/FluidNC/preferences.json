@@ -77,6 +77,23 @@
                 ]
             }
         ],
+        "eventmacros": [
+            {
+                "id": "enableeventmacros",
+                "type": "boolean",
+                "label": "S227",
+                "help": "S233",
+                "value": false
+            },
+            {
+                "id": "eventmacros",
+                "type": "list",
+                "sorted": false,
+                "label": "S228",
+                "value": [],
+                "depend": [{ "id": "enableeventmacros", "value": true }]
+            }
+        ],
         "files": [
             {
                 "id": "filesfilter",

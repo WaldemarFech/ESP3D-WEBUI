@@ -1,0 +1,9 @@
+{
+    "id": "id",
+    "name": "Event macro",
+    "event": "spindle_on",
+    "action": "",
+    "delay": "300",
+    "cooldownms": "3000",
+    "enabled": true
+}
