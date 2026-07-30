@@ -32,6 +32,7 @@ interface OptionProps {
     label: string
     value: string | number
     depend?: DependencyCondition[]
+    title?: string
     [key: string]: any
 }
 
@@ -39,6 +40,7 @@ interface SelectOption {
     label: string
     value: string | number
     depend?: DependencyCondition[]
+    title?: string
 }
 
 type SelectValueCallback = (value: string | null, shouldValidate?: boolean) => void

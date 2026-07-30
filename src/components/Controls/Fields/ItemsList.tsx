@@ -37,11 +37,32 @@ import {
     Trash2,
     Minimize2,
     Flag,
+    Zap,
 } from "preact-feather"
 import defaultPanel from "./def_panel.json"
 import defaultMacro from "./def_macro.json"
 import defaultPolling from "./def_polling.json"
 import defaultEventMacro from "./def_eventmacro.json"
+
+// Example/placeholder action URLs, one per event macro trigger, for the
+// eventmacros list's "insert example" quick-fill button (only fills an
+// empty action field - never overwrites an existing value). Grounded in
+// this codebase's already-validated Tasmota-style smart-plug URI_SILENT
+// use case; "hold"/"ws_connect"/"ws_disconnect" have no obviously-real
+// smart-plug use case, so they get an honest generic placeholder instead
+// of a forced example.
+const eventMacroExampleActions: Record<string, string> = {
+    spindle_on: "http://192.168.30.4/cm?cmnd=Power%20ON",
+    spindle_off: "http://192.168.30.4/cm?cmnd=Power%20OFF",
+    cycle_start: "http://<light-plug-ip>/cm?cmnd=Power%20ON",
+    cycle_stop: "http://<light-plug-ip>/cm?cmnd=Power%20OFF",
+    hold: "http://<device-ip>/your-endpoint",
+    door_open: "http://192.168.30.4/cm?cmnd=Power%20OFF",
+    door_closed: "http://192.168.30.4/cm?cmnd=Power%20ON",
+    alarm: "http://192.168.30.4/cm?cmnd=Power%20OFF",
+    ws_connect: "http://<device-ip>/your-endpoint",
+    ws_disconnect: "http://<device-ip>/your-endpoint",
+}
 
 interface FieldItem {
     id: string
@@ -310,12 +331,52 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                                               label: T(curr.label),
                                               value: curr.value,
                                               depend: curr.depend,
+                                              // native per-option hover tooltip (event
+                                              // dropdown's "what triggers this" text)
+                                              title: curr.title ? T(curr.title) : undefined,
                                           })
                                           return acc
                                       }, [])
                                     : null
                                 if (idList == "keymap" && item.name == "name") {
                                     return
+                                }
+                                const fieldSetValue = (val: any, update?: boolean) => {
+                                    if (!update) item.value = val
+                                    setvalidation(validationfn(item))
+                                    setValue(completeList, update)
+                                }
+                                // Quick-fill: insert a plausible example action URL for
+                                // this row's currently-selected event, but never clobber
+                                // a value the user already typed.
+                                if (idList == "eventmacros" && item.name == "action") {
+                                    const eventField = value.find(
+                                        (f) => f.name == "event"
+                                    )
+                                    const example = eventField
+                                        ? eventMacroExampleActions[eventField.value]
+                                        : undefined
+                                    if (example) {
+                                        const hasValue =
+                                            String(item.value || "").trim().length > 0
+                                        rest.button = (
+                                            <ButtonImg
+                                                m1
+                                                tooltip
+                                                data-tooltip={T("S237")}
+                                                disabled={hasValue}
+                                                icon={<Zap />}
+                                                onClick={(
+                                                    e: TargetedMouseEvent<HTMLButtonElement>
+                                                ) => {
+                                                    useUiContextFn.haptic()
+                                                    e.currentTarget.blur()
+                                                    if (hasValue) return
+                                                    fieldSetValue(example)
+                                                }}
+                                            />
+                                        )
+                                    }
                                 }
                                 return (
                                     <Field
@@ -333,11 +394,7 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                                                 : false
                                         }
                                         {...rest}
-                                        setValue={(val: any, update?: boolean) => {
-                                            if (!update) item.value = val
-                                            setvalidation(validationfn(item))
-                                            setValue(completeList, update)
-                                        }}
+                                        setValue={fieldSetValue}
                                         validation={validation}
                                     />
                                 )

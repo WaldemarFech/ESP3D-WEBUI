@@ -239,6 +239,7 @@
     "S234": "Wait this long after the event, then re-check it still holds, before firing. Also usable as an intentional delay — e.g. keep a vacuum running briefly after the spindle stops.",
     "S235": "Minimum time between two firings of this rule (500 ms floor, enforced).",
     "S236": "Each event fires independently — door_closed does not imply cycle_start, so bind it explicitly if you want something to resume when the door closes. In dynamic-power laser mode (M4), spindle_on/spindle_off can produce false transitions mid-cut — prefer cycle_start/cycle_stop for mains-power actions in that mode.",
+    "S237": "Insert an example action URL for the selected event (only fills an empty field).",
     "btn+X": "X+",
     "btn-X": "X-",
     "btnHX": "Home X",

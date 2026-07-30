@@ -212,17 +212,23 @@ function formatItem(itemData: RawItemData, index: number = -1, origineId: string
                     newItem.type = "select"
                     newItem.label = "S229"
                     newItem.help = "S236"
+                    // `title` is a raw translation id, same convention as `label` -
+                    // both get translated in ItemsList.tsx's options-reduce before
+                    // reaching Select.tsx, where `title` becomes the browser's native
+                    // per-option hover tooltip. Text must match eventMacros.ts's
+                    // conditionHolds()/dispatch() edges exactly - this is what actually
+                    // triggers the event, not a guess.
                     newItem.options = [
-                        { label: "FL13", value: "spindle_on" },
-                        { label: "FL14", value: "spindle_off" },
-                        { label: "FL15", value: "cycle_start" },
-                        { label: "FL16", value: "cycle_stop" },
-                        { label: "FL17", value: "hold" },
-                        { label: "FL18", value: "door_open" },
-                        { label: "FL19", value: "door_closed" },
-                        { label: "FL20", value: "alarm" },
-                        { label: "FL21", value: "ws_connect" },
-                        { label: "FL22", value: "ws_disconnect" },
+                        { label: "FL13", value: "spindle_on", title: "FL23" },
+                        { label: "FL14", value: "spindle_off", title: "FL24" },
+                        { label: "FL15", value: "cycle_start", title: "FL25" },
+                        { label: "FL16", value: "cycle_stop", title: "FL26" },
+                        { label: "FL17", value: "hold", title: "FL27" },
+                        { label: "FL18", value: "door_open", title: "FL28" },
+                        { label: "FL19", value: "door_closed", title: "FL29" },
+                        { label: "FL20", value: "alarm", title: "FL30" },
+                        { label: "FL21", value: "ws_connect", title: "FL31" },
+                        { label: "FL22", value: "ws_disconnect", title: "FL32" },
                     ]
                     break
                 case "delay":
