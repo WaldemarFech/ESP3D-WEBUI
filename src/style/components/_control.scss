@@ -479,9 +479,21 @@ a label {
 // src/components/Helpers/tooltip.ts. white-space: pre-wrap (rather than the
 // base .tooltip rule's pre) lets long help text wrap across multiple lines
 // within max-width instead of being clipped to one line with "...".
+//
+// Explicitly resets every positioning property a direction modifier
+// (.tooltip-left/-right/-bottom, same specificity, but earlier in the
+// cascade since this file loads after spectre in index.scss) could have
+// set, not just left/top/bottom. tooltip-left in particular sets
+// right: 100% - left unreset, that survived alongside this rule's own
+// left: var(--tooltip-x), and position:fixed + left/right both set +
+// width:auto computes the box's width from the gap between those two
+// anchors instead of from content/max-width, squeezing the tooltip into an
+// unreadable sliver (this is exactly what broke the jog distance-selector
+// tooltips, which combine tooltip-portal with tooltip-left).
 .tooltip.tooltip-portal::after {
     position: fixed;
     left: var(--tooltip-x, 50%);
+    right: auto;
     top: var(--tooltip-y, 0);
     bottom: auto;
     max-width: 220px;
