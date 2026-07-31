@@ -99,7 +99,7 @@ const vacPlugOff = "http://192.168.30.4/cm?cmnd=Power%20OFF"
 // is a real, already-verified address (this codebase's demo Tasmota plugs
 // above) rather than a <placeholder-ip> - a "template" button that doesn't
 // actually work out of the box would be worse than no button at all, so no
-// template for hold/ws_connect/ws_disconnect/cycle_start.
+// template for hold/ws_connect/ws_disconnect.
 const eventMacroTemplates: EventMacroTemplate[] = [
     {
         labelKey: "S239",
@@ -175,6 +175,16 @@ const eventMacroTemplates: EventMacroTemplate[] = [
         labelKey: "S245",
         descriptionKey: "S246",
         rules: [
+            {
+                // cycle_start is a pure software state change in the
+                // controller (Idle -> Run), not a hardware signal the mill
+                // plug itself needs to already be powered for - no
+                // chicken-and-egg problem, so this can fire immediately.
+                event: "cycle_start",
+                action: millPlugOn,
+                delay: "300",
+                cooldownms: "3000",
+            },
             {
                 // Deliberately long delay - so a job started right after
                 // this one doesn't immediately lose power again.
