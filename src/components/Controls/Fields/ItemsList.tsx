@@ -66,6 +66,78 @@ const eventMacroExampleActions: Record<string, string> = {
     ws_disconnect: "http://<device-ip>/your-endpoint",
 }
 
+interface EventMacroTemplateRule {
+    event: string
+    action: string
+    delay: string
+    cooldownms: string
+}
+interface EventMacroTemplate {
+    labelKey: string
+    descriptionKey: string
+    rules: EventMacroTemplateRule[]
+}
+
+// One-click complete, immediately-testable event-macro rule sets - unlike
+// the quick-fill (which still needs the user to pick an event, click fill,
+// then think about delay/cooldown themselves), these add fully-configured
+// row(s) in one click. Deliberately limited to events whose example action
+// is a real, already-verified address (this codebase's demo Tasmota plug,
+// 192.168.30.4) rather than a <placeholder-ip> - a "template" button that
+// doesn't actually work out of the box would be worse than no button at
+// all, so no template for hold/ws_connect/ws_disconnect/cycle_start/
+// cycle_stop.
+const eventMacroTemplates: EventMacroTemplate[] = [
+    {
+        labelKey: "S239",
+        descriptionKey: "S240",
+        rules: [
+            {
+                event: "spindle_on",
+                action: "http://192.168.30.4/cm?cmnd=Power%20ON",
+                delay: "300",
+                cooldownms: "3000",
+            },
+            {
+                event: "spindle_off",
+                action: "http://192.168.30.4/cm?cmnd=Power%20OFF",
+                delay: "4000",
+                cooldownms: "3000",
+            },
+        ],
+    },
+    {
+        labelKey: "S241",
+        descriptionKey: "S242",
+        rules: [
+            {
+                event: "door_open",
+                action: "http://192.168.30.4/cm?cmnd=Power%20OFF",
+                delay: "300",
+                cooldownms: "3000",
+            },
+            {
+                event: "door_closed",
+                action: "http://192.168.30.4/cm?cmnd=Power%20ON",
+                delay: "300",
+                cooldownms: "3000",
+            },
+        ],
+    },
+    {
+        labelKey: "S243",
+        descriptionKey: "S244",
+        rules: [
+            {
+                event: "alarm",
+                action: "http://192.168.30.4/cm?cmnd=Power%20OFF",
+                delay: "300",
+                cooldownms: "3000",
+            },
+        ],
+    },
+]
+
 interface FieldItem {
     id: string
     type?: string
@@ -480,6 +552,38 @@ const ItemsList: FunctionalComponent<ItemsListProps> = ({
         setValue(value)
     }
 
+    // eventmacros only: one-click add of a complete, pre-filled rule (or
+    // rule pair) from eventMacroTemplates, same shape as addItem's own
+    // clone-default/generateUID/formatItem/editionMode dance, just driven
+    // by the template's rule data instead of a blank default. Multiple
+    // rules in a template are formatted first and unshifted together in one
+    // call, so their relative order (e.g. spindle_on above spindle_off) is
+    // preserved rather than reversed by two separate unshifts. Re-clicking
+    // just adds another copy - no special-casing, same as if the user
+    // manually added a duplicate rule (removable with the existing delete
+    // button same as any other row).
+    const addTemplate = (template: EventMacroTemplate) => (
+        e: TargetedMouseEvent<HTMLButtonElement>
+    ) => {
+        useUiContextFn.haptic()
+        e.currentTarget.blur()
+        const formattedRows = template.rules.map((rule) => {
+            const newItem: any = JSON.parse(JSON.stringify(defaultEventMacro))
+            newItem.id = generateUID()
+            newItem.name += ` ${  newItem.id}`
+            newItem.event = rule.event
+            newItem.action = rule.action
+            newItem.delay = rule.delay
+            newItem.cooldownms = rule.cooldownms
+            const formatted = formatItem(newItem, -1, "eventmacros")
+            formatted.editionMode = true
+            formatted.newItem = true
+            return formatted
+        })
+        value.unshift(...formattedRows)
+        setValue(value)
+    }
+
     useEffect(() => {
         //to update state when import- but why ?
         if (setValue) setValue(null, true)
@@ -529,6 +633,20 @@ const ItemsList: FunctionalComponent<ItemsListProps> = ({
                         onClick={addItem}
                     />
                 )}
+                {!fixed &&
+                    id == "eventmacros" &&
+                    eventMacroTemplates.map((template) => (
+                        <ButtonImg
+                            key={template.labelKey}
+                            m2
+                            sm
+                            label={T(template.labelKey)}
+                            tooltip
+                            data-tooltip={T(template.descriptionKey)}
+                            icon={<Plus />}
+                            onClick={addTemplate(template)}
+                        />
+                    ))}
                 {fixed && <label class="m-2">{T(label)}</label>}
             </legend>
             <div class="m-1" />
