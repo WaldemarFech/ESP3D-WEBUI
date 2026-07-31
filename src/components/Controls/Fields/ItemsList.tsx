@@ -531,6 +531,7 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                                 }
                                 return (
                                     <Field
+                                        key={item.id}
                                         id={item.id}
                                         label={
                                             idList == "keymap"
@@ -704,6 +705,7 @@ const ItemsList: FunctionalComponent<ItemsListProps> = ({
                     value.map((element, index, completeList) => {
                         return (
                             <ItemControl
+                                key={element.id}
                                 itemData={element}
                                 index={index}
                                 completeList={completeList}
