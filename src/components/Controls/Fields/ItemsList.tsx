@@ -29,7 +29,7 @@ import {
     silentFetch,
 } from "../../Helpers"
 import { Field } from "../../Controls"
-import { formatItem } from "../../../tabs/interface/importHelper"
+import { formatItem, eventmacroUrlConstraints } from "../../../tabs/interface/importHelper"
 import { useUiContextFn, useSettingsContext } from "../../../contexts"
 import {
     Plus,
@@ -303,11 +303,25 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
         completeList.splice(index, 1)
         setValue(completeList)
     }
+    // eventmacros only: which action type this row currently uses - "url"
+    // (default, also the fallback for rules saved before this field existed)
+    // or "macro". Drives which of action/macroid is shown (see the field-map
+    // below) and whether the URL-only test button applies.
+    const eventmacrosActionTypeField =
+        idList == "eventmacros"
+            ? value.find((f: FieldItem) => f.name == "actiontype")
+            : undefined
+    const eventmacrosActionType = eventmacrosActionTypeField
+        ? String(eventmacrosActionTypeField.value || "url")
+        : "url"
     // eventmacros only: fire this row's current action URL right now, via
     // silentFetch directly - completely bypasses eventMacros.ts, so no
     // cooldown/in-flight/settle-delay can ever hold back or drop a manual
     // test. Reads the row's live in-memory value, so this works even while
-    // still editing, before Save.
+    // still editing, before Save. Macro-triggering rows have no equivalent
+    // bypass-test here - the test button is simply hidden for them (see
+    // editionMode render below) since it exists specifically to test the
+    // silent-URL path.
     const eventmacrosActionField =
         idList == "eventmacros"
             ? value.find((f: FieldItem) => f.name == "action")
@@ -450,7 +464,7 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                                     />
                                 )}
 
-                            {idList == "eventmacros" && (
+                            {idList == "eventmacros" && eventmacrosActionType != "macro" && (
                                 <ButtonImg
                                     m2
                                     tooltip
@@ -474,6 +488,33 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                     <div class="m-1">
                         {value &&
                             value.map((item) => {
+                                // eventmacros only: keep the macroid field's
+                                // options in sync with the CURRENT saved
+                                // macros list on every render - not a
+                                // snapshot frozen at formatItem time, which
+                                // would go stale the moment a macro is
+                                // added, renamed, or removed elsewhere.
+                                // Mutated directly on item.options (not just
+                                // a render-local variable) so validationfn()
+                                // below, which reads item.options as its
+                                // source of truth, sees the same list.
+                                if (idList == "eventmacros" && item.name == "macroid") {
+                                    const macroList = useUiContextFn.getValue("macros")
+                                    item.options =
+                                        Array.isArray(macroList) && macroList.length > 0
+                                            ? macroList.map((m: any) => {
+                                                  const nameField = (
+                                                      m.value || []
+                                                  ).find((f: any) => f.name == "name")
+                                                  return {
+                                                      label: nameField
+                                                          ? String(nameField.initial)
+                                                          : m.id,
+                                                      value: m.id,
+                                                  }
+                                              })
+                                            : [{ label: "S251", value: "", disabled: true }]
+                                }
                                 const {
                                     id,
                                     type,
@@ -495,6 +536,7 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                                               // native per-option hover tooltip (event
                                               // dropdown's "what triggers this" text)
                                               title: curr.title ? T(curr.title) : undefined,
+                                              disabled: curr.disabled,
                                           })
                                           return acc
                                       }, [])
@@ -502,10 +544,65 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                                 if (idList == "keymap" && item.name == "name") {
                                     return
                                 }
+                                // eventmacros only: only the field matching this
+                                // row's current actiontype is relevant - action
+                                // (URL) for "url", macroid for "macro". Mirrors
+                                // the keymap/name skip just above.
+                                if (
+                                    idList == "eventmacros" &&
+                                    item.name == "action" &&
+                                    eventmacrosActionType == "macro"
+                                ) {
+                                    return
+                                }
+                                if (
+                                    idList == "eventmacros" &&
+                                    item.name == "macroid" &&
+                                    eventmacrosActionType != "macro"
+                                ) {
+                                    return
+                                }
                                 const fieldSetValue = (val: any, update?: boolean) => {
                                     if (!update) item.value = val
                                     setvalidation(validationfn(item))
                                     setValue(completeList, update)
+                                }
+                                // eventmacros only: switching actiontype live
+                                // doesn't re-run formatItem, so the field that
+                                // just became inactive can be left with a stale
+                                // haserror from before the toggle, and the one
+                                // that just became active never gets its
+                                // constraint applied - either way, since
+                                // checkSaveStatus() (tabs/interface/index.tsx)
+                                // scans ALL settings for any "haserror":true,
+                                // that can silently hide the Save button for the
+                                // whole page, not just this row. Reapply the
+                                // same constraint helper formatItem uses to both
+                                // siblings and re-run validationfn on them so
+                                // their haserror reflects the new mode right away.
+                                const actiontypeSetValue = (val: any, update?: boolean) => {
+                                    fieldSetValue(val, update)
+                                    if (update) return
+                                    const actionField = value.find(
+                                        (f: FieldItem) => f.name == "action"
+                                    )
+                                    const macroidField = value.find(
+                                        (f: FieldItem) => f.name == "macroid"
+                                    )
+                                    if (actionField) {
+                                        delete actionField.min
+                                        delete actionField.regexpattern
+                                        Object.assign(
+                                            actionField,
+                                            eventmacroUrlConstraints(val)
+                                        )
+                                        validationfn(actionField)
+                                    }
+                                    if (macroidField) {
+                                        delete macroidField.min
+                                        if (val == "macro") macroidField.min = "1"
+                                        validationfn(macroidField)
+                                    }
                                 }
                                 // Quick-fill: insert a plausible example action URL for
                                 // this row's currently-selected event, but never clobber
@@ -556,7 +653,12 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                                                 : false
                                         }
                                         {...rest}
-                                        setValue={fieldSetValue}
+                                        setValue={
+                                            idList == "eventmacros" &&
+                                            item.name == "actiontype"
+                                                ? actiontypeSetValue
+                                                : fieldSetValue
+                                        }
                                         validation={validation}
                                     />
                                 )

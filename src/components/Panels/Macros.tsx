@@ -23,22 +23,19 @@ import { Cast } from "preact-feather"
 import { useUiContext, useUiContextFn } from "../../contexts"
 import { ButtonImg, FullScreenButton, CloseButton, ContainerHelper } from "../Controls"
 import { useTargetCommands } from "../../hooks"
-import { silentFetch } from "../Helpers"
 import { iconsFeather } from "../Images"
 import {
     iconsTarget,
     useTargetContextFn,
-    files,
 } from "../../targets"
 import type { TargetContextFn } from "../../targets/types"
+import { executeMacroAction } from "../../targets/CNC/FluidNC/macroExecution"
+import type { MacroType } from "../../targets/CNC/FluidNC/macroExecution"
 
 /*
  * Local const
  *
  */
-// Types matching MacrosTab.tsx
-type MacroType = "FS" | "SD" | "URI" | "URI_SILENT" | "CMD"
-
 interface MacroValue {
     name: string
     initial: string
@@ -65,14 +62,6 @@ const MacrosPanel: FunctionalComponent = () => {
     const { targetCommands, failToast } = useTargetCommands()
     const iconsList: Record<string, ComponentChildren> = { ...iconsTarget, ...iconsFeather }
     const id = "macrosPanel"
-    const getSDSource = (): string => {
-        for (const source of files.supported) {
-            if (source.value == "DIRECTSD") {
-                return source.value
-            }
-        }
-        return "NONE"
-    }
     const sendCommand = (command: string): void => {
         const callbacks = {
             onSuccess: (result: string) => {
@@ -93,56 +82,11 @@ const MacrosPanel: FunctionalComponent = () => {
         acc.push(item)
         return acc
     }, [])
+    // Actual FS/SD/URI/URI_SILENT/CMD switch lives in macroExecution.ts, shared
+    // with the event-macros engine (see that file's header comment) - this is
+    // just the panel's own sendCommand plugged in.
     const processMacro = (action: string, type: MacroType): void => {
-        switch (type) {
-            case "FS":
-                //[ESP700] //ESP700 should send status to telnet / websocket
-                //Todo: handle response from ESP700
-                sendCommand(`[ESP700]${  action}`)
-                break
-            case "SD": {
-                //get command accoring target FW
-                const response = files.command(
-                    getSDSource(),
-                    "play",
-                    "",
-                    action
-                )
-
-                const cmds = response.cmd.split("\n")
-                cmds.forEach((cmd: string) => {
-                    sendCommand(cmd)
-                })
-
-                break
-            }
-            //TODO:
-            //TFT SD ? same as above
-            //TFT USB ? same as above
-            case "URI": {
-                //open new page, or silent command via the legacy [SILENT] prefix
-                if (action.trim().startsWith("[SILENT]")) {
-                    silentFetch(action.trim().replace("[SILENT]", "").trim())
-                } else {
-                    window.open(action, "_blank", "noopener,noreferrer")
-                }
-                break
-            }
-            case "URI_SILENT":
-                silentFetch(action.trim())
-                break
-            case "CMD": {
-                //split by ; and show in terminal
-                const commandsList = action.trim().split(";")
-                commandsList.forEach((command) => {
-                    sendCommand(command)
-                })
-                break
-            }
-            default:
-                console.log("type:", type, " action:", action)
-                break
-        }
+        executeMacroAction(action, type, sendCommand)
     }
 
     return (

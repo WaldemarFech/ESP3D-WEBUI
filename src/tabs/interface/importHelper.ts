@@ -65,6 +65,20 @@ export interface ImportPreferencesResult {
 }
 
 /**
+ * Event-macro "action" field's URL constraints - only apply when the rule's
+ * actiontype is "url" (or unset, for rules saved before actiontype existed).
+ * When actiontype is "macro", the action field is unused/hidden and must
+ * carry no constraints, or its permanently-empty value would fail validation
+ * for a field the user can't even see. Exported so ItemsList.tsx's live
+ * actiontype toggle can reapply the exact same rule (formatItem only runs
+ * once, at creation/import time, so it can't react to a later in-place edit).
+ */
+export function eventmacroUrlConstraints(actiontype: string | undefined): { min?: string; regexpattern?: string } {
+    if (actiontype === "macro") return {}
+    return { min: "1", regexpattern: "^https?://" }
+}
+
+/**
  * Formats an item data object.
  *
  * @param {Object} itemData - The item data object to format.
@@ -198,15 +212,49 @@ function formatItem(itemData: RawItemData, index: number = -1, origineId: string
                     newItem.label = "S139"
                     newItem.min = "2"
                     break
+                case "actiontype":
+                    newItem.type = "select"
+                    newItem.label = "S247"
+                    newItem.help = "S252"
+                    newItem.options = [
+                        { label: "S248", value: "url" },
+                        { label: "S249", value: "macro" },
+                    ]
+                    break
                 case "action":
                     newItem.type = "text"
-                    newItem.min = "1"
                     if (origineId == "eventmacros") {
                         newItem.label = "S226"
-                        newItem.regexpattern = "^https?://"
+                        // Only a "url"-typed rule actually uses this field -
+                        // when actiontype is "macro" it's hidden (see
+                        // ItemsList.tsx) and must NOT carry min/regexpattern,
+                        // or its permanently-empty value trips haserror and -
+                        // since checkSaveStatus() in this file scans ALL
+                        // settings for any "haserror":true - can silently hide
+                        // the Save button for the whole page, not just this
+                        // row. Exported so ItemsList.tsx's live actiontype
+                        // toggle (which can't re-run formatItem) can reapply
+                        // the same rule without duplicating these values.
+                        Object.assign(newItem, eventmacroUrlConstraints(itemData.actiontype))
                     } else {
+                        newItem.min = "1"
                         newItem.label = "S159"
                     }
+                    break
+                case "macroid":
+                    newItem.type = "select"
+                    newItem.label = "S250"
+                    // Only required when actiontype is "macro" - see the
+                    // "action" case above for why this is conditional.
+                    if (itemData.actiontype === "macro") {
+                        newItem.min = "1"
+                    }
+                    // Options are NOT set here: the list of saved macros can
+                    // change after this item was formatted (macro added/
+                    // renamed/removed elsewhere), so ItemsList.tsx builds
+                    // them fresh from current settings on every render
+                    // instead of freezing a snapshot at format time.
+                    newItem.options = []
                     break
                 case "event":
                     newItem.type = "select"
