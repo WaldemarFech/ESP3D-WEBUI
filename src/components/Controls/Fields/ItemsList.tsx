@@ -78,15 +78,28 @@ interface EventMacroTemplate {
     rules: EventMacroTemplateRule[]
 }
 
+// Real, already-verified demo devices (from the user's own live macro
+// config, not invented). "Mill" is the machine's main/spindle-motor power -
+// NOT the ESP32 controller itself, which stays separately powered so the
+// WebUI stays reachable even with the mill plug off. It uses Tasmota's
+// numeric Power%201/Power%200 syntax, matching the user's own existing
+// working macro exactly - kept as-is, not normalized to the ON/OFF spelling
+// below; both are equally valid Tasmota syntax, this is a harmless cosmetic
+// inconsistency between the two devices, not a bug to fix. "Vac" is the
+// dust-extraction plug, already live-tested in Task 11/9 - untouched.
+const millPlugOn = "http://192.168.30.3/cm?cmnd=Power%201"
+const millPlugOff = "http://192.168.30.3/cm?cmnd=Power%200"
+const vacPlugOn = "http://192.168.30.4/cm?cmnd=Power%20ON"
+const vacPlugOff = "http://192.168.30.4/cm?cmnd=Power%20OFF"
+
 // One-click complete, immediately-testable event-macro rule sets - unlike
 // the quick-fill (which still needs the user to pick an event, click fill,
 // then think about delay/cooldown themselves), these add fully-configured
 // row(s) in one click. Deliberately limited to events whose example action
-// is a real, already-verified address (this codebase's demo Tasmota plug,
-// 192.168.30.4) rather than a <placeholder-ip> - a "template" button that
-// doesn't actually work out of the box would be worse than no button at
-// all, so no template for hold/ws_connect/ws_disconnect/cycle_start/
-// cycle_stop.
+// is a real, already-verified address (this codebase's demo Tasmota plugs
+// above) rather than a <placeholder-ip> - a "template" button that doesn't
+// actually work out of the box would be worse than no button at all, so no
+// template for hold/ws_connect/ws_disconnect/cycle_start.
 const eventMacroTemplates: EventMacroTemplate[] = [
     {
         labelKey: "S239",
@@ -94,14 +107,18 @@ const eventMacroTemplates: EventMacroTemplate[] = [
         rules: [
             {
                 event: "spindle_on",
-                action: "http://192.168.30.4/cm?cmnd=Power%20ON",
+                action: vacPlugOn,
                 delay: "300",
                 cooldownms: "3000",
             },
             {
-                event: "spindle_off",
-                action: "http://192.168.30.4/cm?cmnd=Power%20OFF",
-                delay: "4000",
+                // cycle_stop (whole machine back at Idle), not spindle_off -
+                // spindle_off fires the instant the spindle itself stops,
+                // even while a park/retract sequence is still running right
+                // after it.
+                event: "cycle_stop",
+                action: vacPlugOff,
+                delay: "300",
                 cooldownms: "3000",
             },
         ],
@@ -112,13 +129,25 @@ const eventMacroTemplates: EventMacroTemplate[] = [
         rules: [
             {
                 event: "door_open",
-                action: "http://192.168.30.4/cm?cmnd=Power%20OFF",
+                action: millPlugOff,
+                delay: "300",
+                cooldownms: "3000",
+            },
+            {
+                event: "door_open",
+                action: vacPlugOff,
                 delay: "300",
                 cooldownms: "3000",
             },
             {
                 event: "door_closed",
-                action: "http://192.168.30.4/cm?cmnd=Power%20ON",
+                action: millPlugOn,
+                delay: "300",
+                cooldownms: "3000",
+            },
+            {
+                event: "door_closed",
+                action: vacPlugOn,
                 delay: "300",
                 cooldownms: "3000",
             },
@@ -130,8 +159,28 @@ const eventMacroTemplates: EventMacroTemplate[] = [
         rules: [
             {
                 event: "alarm",
-                action: "http://192.168.30.4/cm?cmnd=Power%20OFF",
+                action: millPlugOff,
                 delay: "300",
+                cooldownms: "3000",
+            },
+            {
+                event: "alarm",
+                action: vacPlugOff,
+                delay: "300",
+                cooldownms: "3000",
+            },
+        ],
+    },
+    {
+        labelKey: "S245",
+        descriptionKey: "S246",
+        rules: [
+            {
+                // Deliberately long delay - so a job started right after
+                // this one doesn't immediately lose power again.
+                event: "cycle_stop",
+                action: millPlugOff,
+                delay: "15000",
                 cooldownms: "3000",
             },
         ],
