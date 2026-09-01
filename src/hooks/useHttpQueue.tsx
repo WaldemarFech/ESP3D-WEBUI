@@ -45,7 +45,7 @@ interface HttpRequest {
 }
 
 interface HttpQueueReturn {
-    createNewRequest: (url: string, params: HttpRequestParams, callbacks?: HttpCallbacks) => void
+    createNewRequest: (url: string, params: HttpRequestParams, callbacks?: HttpCallbacks) => boolean
     processRequestsNow: () => void
     createNewTopRequest: (url: string, params: HttpRequestParams, callbacks?: HttpCallbacks) => void
     abortRequest: (id?: string) => void
@@ -53,7 +53,7 @@ interface HttpQueueReturn {
 }
 
 interface UseHttpFn {
-    createNewRequest: (url: string, params: HttpRequestParams, callbacks?: HttpCallbacks) => void
+    createNewRequest: (url: string, params: HttpRequestParams, callbacks?: HttpCallbacks) => boolean
     abortRequest: (id?: string) => void
     removeAllRequests: () => void
 }
@@ -102,7 +102,7 @@ const useHttpQueue = (): HttpQueueReturn => {
         })
     }
 
-    const createNewRequest = (url: string, params: HttpRequestParams, callbacks: HttpCallbacks = {}): void => {
+    const createNewRequest = (url: string, params: HttpRequestParams, callbacks: HttpCallbacks = {}): boolean => {
         const {
             onSuccess: onSuccessCb,
             onFail: onFailCb,
@@ -110,39 +110,31 @@ const useHttpQueue = (): HttpQueueReturn => {
         } = callbacks
         const id = params.id ? params.id : generateUID()
 
-        if (params.max != undefined) {
-            const totalInQueue = localRequests.current.reduce(
-                (total, current) => {
-                    if (id == current) return total + 1
-                    else return total
+        try {
+            const accepted = addInQueue({
+                id,
+                url,
+                params,
+                onSuccess: (result: string | Blob) => {
+                    localRequests.current = localRequests.current.filter((requestId) => requestId != id)
+                    if (onSuccessCb) onSuccessCb(result as string)
                 },
-                0
-            )
-            if (totalInQueue >= params.max) return
+                onProgress: (percent: number) => {
+                    if (onProgressCb) onProgressCb(percent)
+                },
+                onFail: (error: string) => {
+                    localRequests.current = localRequests.current.filter((requestId) => requestId != id)
+                    if (onFailCb) onFailCb(error)
+                },
+            })
+            if (!accepted) return false
+            localRequests.current = [...localRequests.current, id]
+            return true
+        } catch (error) {
+            localRequests.current = localRequests.current.filter((requestId) => requestId != id)
+            console.log(error)
+            return false
         }
-        localRequests.current = [...localRequests.current, id]
-        addInQueue({
-            id,
-            url,
-            params,
-            onSuccess: (result: string | Blob) => {
-                if (onSuccessCb) onSuccessCb(result as string)
-                localRequests.current.splice(
-                    localRequests.current.indexOf(id),
-                    1
-                )
-            },
-            onProgress: (percent: number) => {
-                if (onProgressCb) onProgressCb(percent)
-            },
-            onFail: (error: string) => {
-                localRequests.current.splice(
-                    localRequests.current.indexOf(id),
-                    1
-                )
-                if (onFailCb) onFailCb(error)
-            },
-        })
     }
 
     const abortRequest = (id?: string): void => {

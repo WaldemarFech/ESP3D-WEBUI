@@ -57,7 +57,7 @@ const useTargetCommands = () => {
     // Prior to sending each individual command, its string is processed with
     // "replaceVariables" to modify the command in a target-dependent manner
 
-    const targetCommands = (commands: (string | (()=> string[]) | (string | (() => string))[]), delimiter?: (string | null | undefined | number), methodID?: { id?: string, max?: number, echo?: boolean}, callbacks?: { onSuccess?: (result: string) => void, onFail?: (error: string) => void})=> {
+    const targetCommands = (commands: (string | (()=> string[]) | (string | (() => string))[]), delimiter?: (string | null | undefined | number), methodID?: { id?: string, max?: number, echo?: boolean, timeoutMs?: number}, callbacks?: { onSuccess?: (result: string) => void, onFail?: (error: string) => void}): boolean => {
         if (typeof commands === "function") {
             commands = commands();
         }
@@ -86,6 +86,10 @@ const useTargetCommands = () => {
             Object.assign(method, { max: methodID.max });
         }
 
+        if (methodID?.timeoutMs != null) {
+            Object.assign(method, { timeoutMs: methodID.timeoutMs });
+        }
+
         if (!callbacks) {
             callbacks = {
                 // The default success action is to do nothing
@@ -105,6 +109,7 @@ const useTargetCommands = () => {
         }
 
         // Commands is now an object (probaby an array)
+        let allAccepted = true
         cmdarr.forEach((command: string | (() => string)) => {
             let cmd: string
             if (typeof command === "string") {
@@ -126,12 +131,14 @@ const useTargetCommands = () => {
          }
 
             console.log(`cmd ${  replaced}`)
-            createNewRequest(
+            const accepted = createNewRequest(
                 espHttpURL("command", args),
                 method,
                 callbacks
             )
+            allAccepted = accepted && allAccepted
         })
+        return allAccepted
     }
 
     const sendSerialCmd = (cmd: string, updateUI: (res: any) => void) => {
