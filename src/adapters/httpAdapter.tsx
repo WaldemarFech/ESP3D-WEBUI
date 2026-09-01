@@ -56,7 +56,7 @@ const httpAdapter = (
     params: HttpAdapterParams = {},
     setUploadProgress: (percent: number) => void = () => {}
 ): HttpAdapterReturn => {
-    const { method = "GET", headers = {}, body = null, id = null } = params
+    const { method = "GET", headers = {}, body = null, id = null, timeoutMs = 0 } = params
     const sanitizedMethod = method.trim().toUpperCase()
     const xhr = new XMLHttpRequest()
     if (id && id.startsWith("download")) {
@@ -84,6 +84,7 @@ const httpAdapter = (
     }
 
     xhr.open(sanitizedMethod, cacheBustedUrl(url), true) //Bypassing the cache
+    if (timeoutMs > 0) xhr.timeout = timeoutMs
 
     /** handle URL params ? */
 
@@ -116,6 +117,12 @@ const httpAdapter = (
                 }`
             )
             e.code = xhr.status
+            reject(e)
+        }
+
+        xhr.ontimeout = () => {
+            const e: HttpError = new Error("408 - Request timeout")
+            e.code = 408
             reject(e)
         }
 

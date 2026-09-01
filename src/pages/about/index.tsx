@@ -114,31 +114,85 @@ const About: FunctionalComponent = (): JSX.Element => {
     const [isCheckingUpdates, setIsCheckingUpdates] = useState(false)
     const [latestFirmwareRelease, setLatestFirmwareRelease] = useState<GitHubRelease | null>(null)
     const [availableFirmwareReleases, setAvailableFirmwareReleases] = useState<GitHubRelease[]>([])
+    const propsRequestInFlight = useRef(false)
+    const hasProps = useRef(props.length > 0)
+    const mounted = useRef(false)
+    const liveRefreshEnabled = useRef(false)
+    const liveRefreshTimer = useRef<number | undefined>(undefined)
     const inputFilesRef = useRef<HTMLInputElement>(null)
     const isFlashFS = connectionSettings.current.FlashFileSystem == "none" ? false : true
     const isSDFS = connectionSettings.current.SDConnection == "none" ? false : true
 
-    const getProps = (): void => {
-        setIsLoading(true)
+    const scheduleNextRefresh = (): void => {
+        if (!liveRefreshEnabled.current) return
+        if (liveRefreshTimer.current != undefined) window.clearTimeout(liveRefreshTimer.current)
+        liveRefreshTimer.current = window.setTimeout(() => {
+            liveRefreshTimer.current = undefined
+            getProps()
+        }, 10_000)
+    }
+
+    const finishPropsRequest = (): void => {
+        propsRequestInFlight.current = false
+        if (!mounted.current) return
+        setIsLoading(false)
+        scheduleNextRefresh()
+    }
+
+    const getProps = (manual = false): void => {
+        if (manual && liveRefreshTimer.current != undefined) {
+            window.clearTimeout(liveRefreshTimer.current)
+            liveRefreshTimer.current = undefined
+        }
+        if (propsRequestInFlight.current) return
+        propsRequestInFlight.current = true
+        if (mounted.current && (manual || !hasProps.current)) setIsLoading(true)
         const callbacks = {
             onSuccess: (result: any) => {
-                const jsonResult = JSON.parse(result)
-                if (jsonResult.cmd != 420 || jsonResult.status == "error" || !jsonResult.data) {
-                    toasts.addToast({ content: T("S194"), type: "error" })
-                    setIsLoading(false)
-                    return
+                try {
+                    const jsonResult = JSON.parse(result)
+                    if (jsonResult.cmd != 420 || jsonResult.status == "error" || !jsonResult.data) {
+                        if (mounted.current && manual) toasts.addToast({ content: T("S194"), type: "error" })
+                        return
+                    }
+                    if (mounted.current) {
+                        setProps([...jsonResult.data])
+                        about = [...jsonResult.data]
+                        hasProps.current = true
+                    }
+                } catch (error) {
+                    if (mounted.current && manual) toasts.addToast({ content: T("S194"), type: "error" })
+                    console.log(error)
+                } finally {
+                    finishPropsRequest()
                 }
-                setProps([...jsonResult.data])
-                about = [...jsonResult.data]
-                setIsLoading(false)
             },
             onFail: (error: any) => {
-                setIsLoading(false)
-                toasts.addToast({ content: error, type: "error" })
+                // Automatic live polling is best effort.  ResourcePolicy can
+                // legitimately return 503 while another heavy response is active;
+                // keep the last good values and retry after completion without
+                // spamming one toast per rejected poll.
+                if (mounted.current && manual) toasts.addToast({ content: error, type: "error" })
                 console.log(error)
+                finishPropsRequest()
             },
         }
-        targetCommands("[ESP420]json=yes", undefined, undefined, callbacks)
+        try {
+            const accepted = targetCommands(
+                "[ESP420]json=yes",
+                undefined,
+                { id: "about-esp420", max: 1, echo: false, timeoutMs: 8_000 },
+                callbacks
+            )
+            if (!accepted) {
+                if (mounted.current && manual) toasts.addToast({ content: T("S194"), type: "error" })
+                finishPropsRequest()
+            }
+        } catch (error) {
+            if (mounted.current && manual) toasts.addToast({ content: T("S194"), type: "error" })
+            console.log(error)
+            finishPropsRequest()
+        }
     }
 
     //from https://stackoverflow.com/questions/5916900/how-can-you-detect-the-version-of-a-browser
@@ -766,9 +820,24 @@ const About: FunctionalComponent = (): JSX.Element => {
     }
 
     useEffect(() => {
-        if (uisettings.getValue("autoload") && props.length == 0) getProps()
-        else setIsLoading(false)
-    })
+        mounted.current = true
+        if (uisettings.getValue("autoload")) {
+            liveRefreshEnabled.current = true
+            getProps()
+        } else {
+            setIsLoading(false)
+        }
+
+        return () => {
+            mounted.current = false
+            liveRefreshEnabled.current = false
+            propsRequestInFlight.current = false
+            if (liveRefreshTimer.current != undefined) {
+                window.clearTimeout(liveRefreshTimer.current)
+                liveRefreshTimer.current = undefined
+            }
+        }
+    }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         checkForUpdates()
@@ -882,7 +951,7 @@ const About: FunctionalComponent = (): JSX.Element => {
                             data-tooltip={T("S23")}
                             onClick={() => {
                                 useUiContextFn.haptic()
-                                getProps()
+                                getProps(true)
                             }}
                         />
                     </div>

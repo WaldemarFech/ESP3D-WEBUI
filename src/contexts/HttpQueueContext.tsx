@@ -34,7 +34,7 @@ interface HttpRequest {
 }
 
 interface HttpQueueContextValue {
-    addInQueue: (request: HttpRequest) => void
+    addInQueue: (request: HttpRequest) => boolean
     addInTopQueue: (request: HttpRequest) => void
     removeRequests: (requestIds: string | string[]) => void
     getCurrentRequest: () => any
@@ -59,7 +59,7 @@ const useHttpQueueContext = (): HttpQueueContextValue => {
     // Allow usage before provider is mounted (for circular dependencies with WsContext)
     if (!context) {
         return {
-            addInQueue: () => {},
+            addInQueue: () => false,
             addInTopQueue: () => {},
             removeRequests: () => {},
             getCurrentRequest: () => null,
@@ -77,10 +77,20 @@ const HttpQueueContextProvider: FunctionalComponent<HttpQueueContextProviderProp
     const currentRequest = useRef<any>()
     const { connection } = useUiContext()
 
-    //Add new Request to queue
-    const addInQueue = (newRequest: HttpRequest) => {
+    //Add new Request to queue.  `max` is enforced by the shared provider so it
+    // also covers component unmount/remount while an older request remains active.
+    const addInQueue = (newRequest: HttpRequest): boolean => {
+        if (newRequest.params.max != undefined) {
+            const sameIdCount = requestQueue.current.reduce(
+                (total, request) => total + (request.id == newRequest.id ? 1 : 0),
+                0
+            )
+            if (sameIdCount >= newRequest.params.max) return false
+        }
+
         requestQueue.current = [...requestQueue.current, newRequest]
         if (!isBusy.current) executeHttpCall()
+        return true
     }
 
     //Add new Request to top of queue
