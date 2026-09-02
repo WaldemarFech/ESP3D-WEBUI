@@ -138,6 +138,25 @@ const commandsQuery = (req, res, SendWS) => {
         return
     }
 
+    if (url.indexOf("ESP421") != -1) {
+        res.json({
+            cmd: "421",
+            status: "ok",
+            data: [
+                { id: "Chip ID", value: "33806" },
+                { id: "CPU Cores", value: "2" },
+                { id: "CPU Frequency", value: "240Mhz" },
+                { id: "CPU Temperature", value: "53.3°C" },
+                { id: "Free memory", value: "120.74 KB" },
+                { id: "Largest free block", value: "96.00 KB" },
+                { id: "Heap minimum free", value: "88.00 KB" },
+                { id: "Diagnostic uptime ms", value: "123456" },
+                { id: "FW version", value: "FluidNC v3.9.9" },
+            ],
+        })
+        return
+    }
+
     if (url.indexOf("ESP420") != -1) {
         res.json({
  "cmd": "420",

@@ -37,8 +37,24 @@ interface ProgressBar {
 }
 
 let about: AboutData[] = []
+let liveStatsCapability: boolean | undefined
 
 const defaultHelpUrl = "http://wiki.fluidnc.com/"
+
+const isUnknownCommandText = (value: unknown, allowEmpty = false): boolean => {
+    const text = value == null ? "" : String(value).trim().toLowerCase()
+    if (!text) return allowEmpty
+    return (
+        text.includes("unknown command") ||
+        text.includes("invalid $ statement") ||
+        /^error\s*:\s*3(?:\s|$)/.test(text)
+    )
+}
+
+const isUnsupportedLiveStatsFailure = (error: unknown): boolean => {
+    const text = error == null ? "" : String(error).trim()
+    return /^404(?:\s|$|-)/.test(text) || isUnknownCommandText(text)
+}
 
 const CustomEntry: FunctionalComponent = (): JSX.Element => {
     const { interfaceSettings } = useSettingsContext()
@@ -106,17 +122,18 @@ const About: FunctionalComponent = (): JSX.Element => {
     const { targetCommands } = useTargetCommands()
     const { interfaceSettings, connectionSettings } = useSettingsContext()
     const [isLoading, setIsLoading] = useState<boolean>(true)
+    const [isPropsRequestActive, setIsPropsRequestActive] = useState(false)
     const progressBar: ProgressBar = {}
     const [props, setProps] = useState<AboutData[]>([...about])
     const [isFwUpdate, setIsFwUpdate] = useState<boolean>(false)
     const [latestRelease, setLatestRelease] = useState<GitHubRelease | null>(null)
     const [availableReleases, setAvailableReleases] = useState<GitHubRelease[]>([])
-    const [isCheckingUpdates, setIsCheckingUpdates] = useState(false)
     const [latestFirmwareRelease, setLatestFirmwareRelease] = useState<GitHubRelease | null>(null)
     const [availableFirmwareReleases, setAvailableFirmwareReleases] = useState<GitHubRelease[]>([])
     const propsRequestInFlight = useRef(false)
     const hasProps = useRef(props.length > 0)
     const mounted = useRef(false)
+    const liveStatsSupported = useRef<boolean | undefined>(liveStatsCapability)
     const liveRefreshEnabled = useRef(false)
     const liveRefreshTimer = useRef<number | undefined>(undefined)
     const inputFilesRef = useRef<HTMLInputElement>(null)
@@ -135,53 +152,58 @@ const About: FunctionalComponent = (): JSX.Element => {
     const finishPropsRequest = (): void => {
         propsRequestInFlight.current = false
         if (!mounted.current) return
+        setIsPropsRequestActive(false)
         setIsLoading(false)
         scheduleNextRefresh()
     }
 
-    const getProps = (manual = false): void => {
-        if (manual && liveRefreshTimer.current != undefined) {
+    const applyPropsResponse = (result: any, expectedCommand: number): "ok" | "unsupported" | "invalid" => {
+        if (isUnknownCommandText(result, true)) return "unsupported"
+        try {
+            const jsonResult = JSON.parse(result)
+            if (jsonResult.cmd != expectedCommand || jsonResult.status == "error" || !Array.isArray(jsonResult.data)) {
+                return isUnknownCommandText(jsonResult.data) ? "unsupported" : "invalid"
+            }
+            if (mounted.current) {
+                setProps([...jsonResult.data])
+                about = [...jsonResult.data]
+                hasProps.current = true
+            }
+            return "ok"
+        } catch (error) {
+            console.log(error)
+            return "invalid"
+        }
+    }
+
+    const requestLegacyProps = (manual: boolean): void => {
+        liveStatsSupported.current = false
+        liveStatsCapability = false
+        liveRefreshEnabled.current = false
+        if (liveRefreshTimer.current != undefined) {
             window.clearTimeout(liveRefreshTimer.current)
             liveRefreshTimer.current = undefined
         }
-        if (propsRequestInFlight.current) return
-        propsRequestInFlight.current = true
-        if (mounted.current && (manual || !hasProps.current)) setIsLoading(true)
+
         const callbacks = {
             onSuccess: (result: any) => {
-                try {
-                    const jsonResult = JSON.parse(result)
-                    if (jsonResult.cmd != 420 || jsonResult.status == "error" || !jsonResult.data) {
-                        if (mounted.current && manual) toasts.addToast({ content: T("S194"), type: "error" })
-                        return
-                    }
-                    if (mounted.current) {
-                        setProps([...jsonResult.data])
-                        about = [...jsonResult.data]
-                        hasProps.current = true
-                    }
-                } catch (error) {
-                    if (mounted.current && manual) toasts.addToast({ content: T("S194"), type: "error" })
-                    console.log(error)
-                } finally {
-                    finishPropsRequest()
+                if (applyPropsResponse(result, 420) != "ok" && mounted.current && manual) {
+                    toasts.addToast({ content: T("S194"), type: "error" })
                 }
+                finishPropsRequest()
             },
             onFail: (error: any) => {
-                // Automatic live polling is best effort.  ResourcePolicy can
-                // legitimately return 503 while another heavy response is active;
-                // keep the last good values and retry after completion without
-                // spamming one toast per rejected poll.
                 if (mounted.current && manual) toasts.addToast({ content: error, type: "error" })
                 console.log(error)
                 finishPropsRequest()
             },
         }
+
         try {
             const accepted = targetCommands(
                 "[ESP420]json=yes",
                 undefined,
-                { id: "about-esp420", max: 1, echo: false, timeoutMs: 8_000 },
+                { id: "about-esp420-legacy", max: 1, echo: false, timeoutMs: 8_000 },
                 callbacks
             )
             if (!accepted) {
@@ -193,6 +215,68 @@ const About: FunctionalComponent = (): JSX.Element => {
             console.log(error)
             finishPropsRequest()
         }
+    }
+
+    const requestLiveProps = (manual: boolean): void => {
+        const callbacks = {
+            onSuccess: (result: any) => {
+                const response = applyPropsResponse(result, 421)
+                if (response == "ok") {
+                    liveStatsSupported.current = true
+                    liveStatsCapability = true
+                    finishPropsRequest()
+                } else if (mounted.current && response == "unsupported" && liveStatsSupported.current == undefined) {
+                    requestLegacyProps(manual)
+                } else {
+                    if (mounted.current && manual) toasts.addToast({ content: T("S194"), type: "error" })
+                    finishPropsRequest()
+                }
+            },
+            onFail: (error: any) => {
+                if (mounted.current && liveStatsSupported.current == undefined && isUnsupportedLiveStatsFailure(error)) {
+                    requestLegacyProps(manual)
+                    return
+                }
+                // Automatic live polling is best effort. Keep the last good values
+                // on transient HTTP failures (including 503) and retry after this
+                // request settles without spamming one toast per poll.
+                if (mounted.current && manual) toasts.addToast({ content: error, type: "error" })
+                console.log(error)
+                finishPropsRequest()
+            },
+        }
+
+        try {
+            const accepted = targetCommands(
+                "[ESP421]json=yes",
+                undefined,
+                { id: "about-esp421", max: 1, echo: false, timeoutMs: 8_000 },
+                callbacks
+            )
+            if (!accepted) {
+                if (mounted.current && manual) toasts.addToast({ content: T("S194"), type: "error" })
+                finishPropsRequest()
+            }
+        } catch (error) {
+            if (mounted.current && manual) toasts.addToast({ content: T("S194"), type: "error" })
+            console.log(error)
+            finishPropsRequest()
+        }
+    }
+
+    const getProps = (manual = false): void => {
+        if (manual && liveRefreshTimer.current != undefined) {
+            window.clearTimeout(liveRefreshTimer.current)
+            liveRefreshTimer.current = undefined
+        }
+        if (propsRequestInFlight.current) return
+        propsRequestInFlight.current = true
+        if (mounted.current) {
+            setIsPropsRequestActive(true)
+            if (manual || !hasProps.current) setIsLoading(true)
+        }
+        if (liveStatsSupported.current === false) requestLegacyProps(manual)
+        else requestLiveProps(manual)
     }
 
     //from https://stackoverflow.com/questions/5916900/how-can-you-detect-the-version-of-a-browser
@@ -345,12 +429,11 @@ const About: FunctionalComponent = (): JSX.Element => {
             url = fwUrl[0] || ""
         }
 
-        ;(window as any).open(url, "_blank")
+        (window as any).open(url, "_blank")
         ;(e.target as HTMLElement).blur()
     }
 
     const checkForUpdates = async () => {
-        setIsCheckingUpdates(true)
         try {
             const githubService = new GitHubService({
                 owner: "michmela44",
@@ -364,8 +447,6 @@ const About: FunctionalComponent = (): JSX.Element => {
             setAvailableReleases(releases)
         } catch (error) {
             console.error("Failed to check for updates:", error)
-        } finally {
-            setIsCheckingUpdates(false)
         }
     }
 
@@ -676,7 +757,7 @@ const About: FunctionalComponent = (): JSX.Element => {
 
     const valueTranslated = (value: string): string => {
         if (value.startsWith("ON (") || value.startsWith("OFF (") || value.startsWith("shared (")) {
-            const reg_search = /(?<label>[^\(]*)\s\((?<content>[^\)]*)/
+            const reg_search = /(?<label>[^(]*)\s\((?<content>[^)]*)/
             let res = reg_search.exec(value)
             if (res && res.groups) {
                 return `${T(res.groups.label)} (${T(res.groups.content)})`
@@ -822,8 +903,9 @@ const About: FunctionalComponent = (): JSX.Element => {
     useEffect(() => {
         mounted.current = true
         if (uisettings.getValue("autoload")) {
-            liveRefreshEnabled.current = true
-            getProps()
+            liveRefreshEnabled.current = liveStatsSupported.current !== false
+            if (liveStatsSupported.current === false && hasProps.current) setIsLoading(false)
+            else getProps()
         } else {
             setIsLoading(false)
         }
@@ -932,7 +1014,7 @@ const About: FunctionalComponent = (): JSX.Element => {
                                 <span class="text-dark">{getBrowserInformation()}</span>
                             </li>
                             {props.map(({ id, value }: AboutData) => {
-                                if (id != "FW ver")
+                                if (id != "FW version")
                                     return (
                                         <li key={id}>
                                             <span class="text-primary text-label">{T(id)}:</span>
@@ -949,6 +1031,7 @@ const About: FunctionalComponent = (): JSX.Element => {
                             label={T("S50")}
                             tooltip
                             data-tooltip={T("S23")}
+                            disabled={isPropsRequestActive}
                             onClick={() => {
                                 useUiContextFn.haptic()
                                 getProps(true)
