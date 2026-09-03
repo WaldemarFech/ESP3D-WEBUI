@@ -32,6 +32,7 @@ import {
     useSettings,
 } from "../../hooks"
 import { createFileUploadSuccessHandler } from "../../Services/uploadResponse"
+import { ensureSharedDistanceKeys } from "../../Settings/keymapMigration"
 import type { HttpFailure } from "../../types/http.types"
 import {
     espHttpURL,
@@ -405,6 +406,17 @@ const InterfaceTab = () => {
                             importData.extensions
                     }
                     formatPreferences(interfaceSettings.current.settings)
+                    // Same keymap upgrade as the boot path: imported older
+                    // preferences lack the Z distance bindings for +/-.
+                    const importedJog = interfaceSettings.current.settings.jog
+                    if (Array.isArray(importedJog)) {
+                        const importedKeymap = importedJog.find(
+                            (entry: any) => entry && entry.id == "keymap"
+                        )
+                        if (importedKeymap) {
+                            importedKeymap.value = ensureSharedDistanceKeys(importedKeymap.value)
+                        }
+                    }
                     //console.log("Imported")
                     //console.log(interfaceSettings.current)
                     if (importResult.hasErrors) {
