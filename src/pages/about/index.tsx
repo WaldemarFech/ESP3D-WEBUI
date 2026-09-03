@@ -1,7 +1,12 @@
 import { FunctionalComponent, JSX } from "preact"
 import { useEffect, useState, useRef } from "preact/hooks"
 import { ButtonImg, Loading, CenterLeft, Progress } from "../../components/Controls"
-import { useHttpQueue, useTargetCommands } from "../../hooks"
+import {
+    addHttpFailureToast,
+    getHttpFailureMessage,
+    useHttpQueue,
+    useTargetCommands,
+} from "../../hooks"
 import { useWebSocketService } from "../../hooks/useWebSocketService"
 import { espHttpURL } from "../../components/Helpers"
 import { T } from "../../components/Translations"
@@ -23,9 +28,15 @@ import {
     showReleaseNotesModal,
     showFirmwareUpdateModal,
 } from "../../components/Modal"
+import { safeGitHubDownloadUrl } from "../../Services/GitHubDownloadUrl"
 import { GitHubService } from "../../Services/GitHubService"
 import type { GitHubRelease } from "../../types/github.types"
+import type { HttpFailure } from "../../types/http.types"
+import type { ModalInstanceId } from "../../contexts/ModalsContext"
 import { VersionBadge } from "../../components/VersionBadge"
+import { parseFileUploadResponse } from "../../Services/uploadResponse"
+import { parseFirmwareUploadResponse } from "./uploadResponse"
+import { openSafeExternalUrl } from "./externalLink"
 
 interface AboutData {
     id: string
@@ -35,6 +46,8 @@ interface AboutData {
 interface ProgressBar {
     update?: (value: number) => void
 }
+
+type UploadKind = "firmware" | "webui"
 
 let about: AboutData[] = []
 let liveStatsCapability: boolean | undefined
@@ -52,8 +65,9 @@ const isUnknownCommandText = (value: unknown, allowEmpty = false): boolean => {
 }
 
 const isUnsupportedLiveStatsFailure = (error: unknown): boolean => {
-    const text = error == null ? "" : String(error).trim()
-    return /^404(?:\s|$|-)/.test(text) || isUnknownCommandText(text)
+    const failure = error as { code?: number } | null | undefined
+    const text = getHttpFailureMessage(error).trim()
+    return failure?.code === 404 || /^404(?:\s|$|-)/.test(text) || isUnknownCommandText(text)
 }
 
 const CustomEntry: FunctionalComponent = (): JSX.Element => {
@@ -68,7 +82,7 @@ const CustomEntry: FunctionalComponent = (): JSX.Element => {
             const helpUrl = interfaceSettings.current.custom.help
             const onClickHelp = (e: MouseEvent) => {
                 useUiContextFn.haptic()
-                if (helpUrl) (window as any).open(helpUrl, "_blank")
+                openSafeExternalUrl(helpUrl, window)
                 ;(e.target as HTMLElement).blur()
             }
             HelpEntry = <ButtonImg mx2 icon={<LifeBuoy />} label={T("S72")} onClick={onClickHelp} />
@@ -77,7 +91,7 @@ const CustomEntry: FunctionalComponent = (): JSX.Element => {
             const infoUrl = interfaceSettings.current.custom.information
             const onClickInfo = (e: MouseEvent) => {
                 useUiContextFn.haptic()
-                if (infoUrl) (window as any).open(infoUrl, "_blank")
+                openSafeExternalUrl(infoUrl, window)
                 ;(e.target as HTMLElement).blur()
             }
             InfoEntry = <ButtonImg mx2 icon={<Info />} label={T("S123")} onClick={onClickInfo} />
@@ -125,7 +139,6 @@ const About: FunctionalComponent = (): JSX.Element => {
     const [isPropsRequestActive, setIsPropsRequestActive] = useState(false)
     const progressBar: ProgressBar = {}
     const [props, setProps] = useState<AboutData[]>([...about])
-    const [isFwUpdate, setIsFwUpdate] = useState<boolean>(false)
     const [latestRelease, setLatestRelease] = useState<GitHubRelease | null>(null)
     const [availableReleases, setAvailableReleases] = useState<GitHubRelease[]>([])
     const [latestFirmwareRelease, setLatestFirmwareRelease] = useState<GitHubRelease | null>(null)
@@ -136,12 +149,16 @@ const About: FunctionalComponent = (): JSX.Element => {
     const liveStatsSupported = useRef<boolean | undefined>(liveStatsCapability)
     const liveRefreshEnabled = useRef(false)
     const liveRefreshTimer = useRef<number | undefined>(undefined)
+    const uploadFlowActive = useRef(false)
+    const pendingUploadKind = useRef<UploadKind | null>(null)
+    const activeUploadKind = useRef<UploadKind | null>(null)
+    const filePickerOpen = useRef(false)
     const inputFilesRef = useRef<HTMLInputElement>(null)
     const isFlashFS = connectionSettings.current.FlashFileSystem == "none" ? false : true
     const isSDFS = connectionSettings.current.SDConnection == "none" ? false : true
 
     const scheduleNextRefresh = (): void => {
-        if (!liveRefreshEnabled.current) return
+        if (!liveRefreshEnabled.current || uploadFlowActive.current) return
         if (liveRefreshTimer.current != undefined) window.clearTimeout(liveRefreshTimer.current)
         liveRefreshTimer.current = window.setTimeout(() => {
             liveRefreshTimer.current = undefined
@@ -155,6 +172,68 @@ const About: FunctionalComponent = (): JSX.Element => {
         setIsPropsRequestActive(false)
         setIsLoading(false)
         scheduleNextRefresh()
+    }
+
+    const pauseAboutPolling = (): void => {
+        uploadFlowActive.current = true
+        if (liveRefreshTimer.current != undefined) {
+            window.clearTimeout(liveRefreshTimer.current)
+            liveRefreshTimer.current = undefined
+        }
+        abortRequest("about-esp421")
+        abortRequest("about-esp420-legacy")
+        propsRequestInFlight.current = false
+        if (mounted.current) setIsPropsRequestActive(false)
+    }
+
+    const resumeAboutPolling = (): void => {
+        uploadFlowActive.current = false
+        if (liveRefreshEnabled.current) scheduleNextRefresh()
+    }
+
+    const finishUploadFlow = (): void => {
+        pendingUploadKind.current = null
+        activeUploadKind.current = null
+        filePickerOpen.current = false
+        if (inputFilesRef.current) inputFilesRef.current.value = ""
+        resumeAboutPolling()
+    }
+
+    const openUploadFilePicker = (kind: UploadKind): void => {
+        pauseAboutPolling()
+        pendingUploadKind.current = kind
+        activeUploadKind.current = null
+        filePickerOpen.current = true
+
+        const input = inputFilesRef.current
+        if (!input) {
+            finishUploadFlow()
+            return
+        }
+
+        input.value = ""
+        input.accept = kind === "firmware" ? ".bin" : "*"
+        input.multiple = kind === "webui"
+        try {
+            input.click()
+        } catch (error) {
+            console.log(error)
+            finishUploadFlow()
+        }
+    }
+
+    const cancelPendingUpload = (): void => {
+        if (!pendingUploadKind.current && !uploadFlowActive.current) return
+        finishUploadFlow()
+    }
+
+    const detectClosedFilePicker = (): void => {
+        window.setTimeout(() => {
+            if (!filePickerOpen.current) return
+            filePickerOpen.current = false
+            const list = inputFilesRef.current?.files
+            if (!list || list.length === 0) cancelPendingUpload()
+        }, 0)
     }
 
     const applyPropsResponse = (result: any, expectedCommand: number): "ok" | "unsupported" | "invalid" => {
@@ -192,8 +271,8 @@ const About: FunctionalComponent = (): JSX.Element => {
                 }
                 finishPropsRequest()
             },
-            onFail: (error: any) => {
-                if (mounted.current && manual) toasts.addToast({ content: error, type: "error" })
+            onFail: (error: HttpFailure) => {
+                if (mounted.current && manual) addHttpFailureToast(toasts, error)
                 console.log(error)
                 finishPropsRequest()
             },
@@ -232,7 +311,7 @@ const About: FunctionalComponent = (): JSX.Element => {
                     finishPropsRequest()
                 }
             },
-            onFail: (error: any) => {
+            onFail: (error: HttpFailure) => {
                 if (mounted.current && liveStatsSupported.current == undefined && isUnsupportedLiveStatsFailure(error)) {
                     requestLegacyProps(manual)
                     return
@@ -240,7 +319,7 @@ const About: FunctionalComponent = (): JSX.Element => {
                 // Automatic live polling is best effort. Keep the last good values
                 // on transient HTTP failures (including 503) and retry after this
                 // request settles without spamming one toast per poll.
-                if (mounted.current && manual) toasts.addToast({ content: error, type: "error" })
+                if (mounted.current && manual) addHttpFailureToast(toasts, error)
                 console.log(error)
                 finishPropsRequest()
             },
@@ -265,6 +344,7 @@ const About: FunctionalComponent = (): JSX.Element => {
     }
 
     const getProps = (manual = false): void => {
+        if (uploadFlowActive.current) return
         if (manual && liveRefreshTimer.current != undefined) {
             window.clearTimeout(liveRefreshTimer.current)
             liveRefreshTimer.current = undefined
@@ -302,16 +382,12 @@ const About: FunctionalComponent = (): JSX.Element => {
         ;(e.target as HTMLElement).blur()
 
         const uploadFromDisk = () => {
-            setIsFwUpdate(true)
-            if (inputFilesRef.current) {
-                inputFilesRef.current.value = ""
-                inputFilesRef.current.accept = ".bin"
-                inputFilesRef.current.multiple = false
-                inputFilesRef.current.click()
-            }
+            modals.removeModalById("firmware-update-choice")
+            openUploadFilePicker("firmware")
         }
 
         const downloadFromGithub = () => {
+            modals.removeModalById("firmware-update-choice")
             const currentFirmwareVersion = props.find((element) => element.id == "FW version")?.value || "Unknown"
 
             showFirmwareUpdateModal({
@@ -319,15 +395,11 @@ const About: FunctionalComponent = (): JSX.Element => {
                 releases: availableFirmwareReleases,
                 currentVersion: currentFirmwareVersion,
                 onUploadFile: () => {
-                    setIsFwUpdate(true)
-                    if (inputFilesRef.current) {
-                        inputFilesRef.current.value = ""
-                        inputFilesRef.current.accept = ".bin"
-                        inputFilesRef.current.multiple = false
-                        inputFilesRef.current.click()
-                    }
+                    modals.removeModalById("firmware-update")
+                    openUploadFilePicker("firmware")
                 },
                 onViewReleaseNotes: () => {
+                    modals.removeModalById("firmware-update")
                     const releasesToShow =
                         availableFirmwareReleases.length > 0 ? availableFirmwareReleases.slice(0, 10) : []
 
@@ -388,6 +460,7 @@ const About: FunctionalComponent = (): JSX.Element => {
                                 onClick={(e) => {
                                     e.preventDefault()
                                     useUiContextFn.haptic()
+                                    modals.removeModalById("firmware-update-choice")
                                     const releasesToShow =
                                         availableFirmwareReleases.length > 0
                                             ? availableFirmwareReleases.slice(0, 10)
@@ -429,7 +502,7 @@ const About: FunctionalComponent = (): JSX.Element => {
             url = fwUrl[0] || ""
         }
 
-        (window as any).open(url, "_blank")
+        openSafeExternalUrl(url, window)
         ;(e.target as HTMLElement).blur()
     }
 
@@ -495,7 +568,11 @@ const About: FunctionalComponent = (): JSX.Element => {
                 return
             }
 
-            const downloadUrl = asset.browser_download_url
+            const downloadUrl = safeGitHubDownloadUrl(asset.browser_download_url)
+            if (!downloadUrl) {
+                toasts.addToast({ content: "Release asset has an untrusted download URL", type: "error" })
+                return
+            }
             const link = document.createElement("a")
             link.href = downloadUrl
             link.download = "index.html.gz"
@@ -503,10 +580,7 @@ const About: FunctionalComponent = (): JSX.Element => {
             link.click()
             document.body.removeChild(link)
 
-            const downloadModalIndex = modals.getModalIndex("github-download")
-            if (downloadModalIndex !== -1) {
-                modals.removeModal(downloadModalIndex)
-            }
+            modals.removeModalById("github-download")
 
             toasts.addToast({
                 content: `Downloading ${selectedRelease.tag_name}. Use 'Upload to Device' button after download completes.`,
@@ -515,10 +589,7 @@ const About: FunctionalComponent = (): JSX.Element => {
         }
 
         const cancelDownload = () => {
-            const downloadModalIndex = modals.getModalIndex("github-download")
-            if (downloadModalIndex !== -1) {
-                modals.removeModal(downloadModalIndex)
-            }
+            modals.removeModalById("github-download")
         }
 
         const compareVersions = (current: string, target: string): string => {
@@ -577,7 +648,7 @@ const About: FunctionalComponent = (): JSX.Element => {
                                 const infoBox = document.getElementById("selected-release-info")
                                 if (infoBox) {
                                     const selectedRelease = availableReleases[selectedReleaseIndex]
-                                    infoBox.innerHTML = `${selectedRelease.tag_name} - Released ${new Date(
+                                    infoBox.textContent = `${selectedRelease.tag_name} - Released ${new Date(
                                         selectedRelease.published_at
                                     ).toLocaleDateString()}`
                                 }
@@ -644,6 +715,7 @@ const About: FunctionalComponent = (): JSX.Element => {
                             <button
                                 class="btn btn-primary btn-lg btn-block"
                                 onClick={() => {
+                                    modals.removeModalById("webui-upload")
                                     showDownloadModal()
                                 }}
                                 disabled={availableReleases.length === 0}>
@@ -661,13 +733,8 @@ const About: FunctionalComponent = (): JSX.Element => {
                             <button
                                 class="btn btn-primary btn-lg btn-block"
                                 onClick={() => {
-                                    setIsFwUpdate(false)
-                                    if (inputFilesRef.current) {
-                                        inputFilesRef.current.value = ""
-                                        inputFilesRef.current.accept = "*"
-                                        inputFilesRef.current.multiple = true
-                                        inputFilesRef.current.click()
-                                    }
+                                    modals.removeModalById("webui-upload")
+                                    openUploadFilePicker("webui")
                                 }}>
                                 <UploadCloud size={18} class="mr-2" style="vertical-align: middle;" />
                                 Upload File from Computer
@@ -684,6 +751,7 @@ const About: FunctionalComponent = (): JSX.Element => {
                                 onClick={(e) => {
                                     e.preventDefault()
                                     useUiContextFn.haptic()
+                                    modals.removeModalById("webui-upload")
                                     showReleaseNotes()
                                 }}>
                                 <BookOpen size={14} style="vertical-align: middle;" /> View Release Notes
@@ -707,52 +775,102 @@ const About: FunctionalComponent = (): JSX.Element => {
     }
 
     const uploadFiles = (renameToIndexHtml = false): void => {
+        const uploadKind = pendingUploadKind.current
         const list = inputFilesRef.current?.files
-        if (!list) return
-        const formData = new FormData()
-        formData.append("path", useSettingsContextFn.getValue("HostUploadPath"))
-        formData.append("createPath", "true")
-        if (list.length > 0) {
-            for (let i = 0; i < list.length; i++) {
-                const file = list[i]
-                const fileName = renameToIndexHtml && file.name.endsWith(".html.gz") ? "index.html.gz" : file.name
-                const arg = `${useSettingsContextFn.getValue("HostUploadPath") + fileName}S`
-                formData.append(arg, String(file.size))
-                formData.append("myfiles", file, useSettingsContextFn.getValue("HostUploadPath") + fileName)
-            }
+        if (!uploadKind || !list || list.length === 0) {
+            finishUploadFlow()
+            return
         }
-        showProgressModal({
+        const files = Array.from(list)
+
+        pauseAboutPolling()
+        pendingUploadKind.current = null
+        activeUploadKind.current = uploadKind
+
+        const hostUploadPath = useSettingsContextFn.getValue("HostUploadPath")
+        const formData = new FormData()
+        formData.append("path", hostUploadPath)
+        formData.append("createPath", "true")
+        for (const file of files) {
+            const fileName = renameToIndexHtml && file.name.toLowerCase().endsWith(".html.gz") ? "index.html.gz" : file.name
+            const uploadPath = hostUploadPath + fileName
+            formData.append(`${uploadPath}S`, String(file.size))
+            formData.append("myfiles", file, uploadPath)
+        }
+        if (inputFilesRef.current) inputFilesRef.current.value = ""
+
+        let progressModalId: ModalInstanceId | undefined
+        const removeProgressModal = (): void => {
+            if (progressModalId) modals.removeModalByInstanceId(progressModalId)
+        }
+        const cancelUpload = (): void => {
+            abortRequest("upload")
+            removeProgressModal()
+            finishUploadFlow()
+        }
+
+        progressModalId = showProgressModal({
             modals,
             title: T("S32"),
-            button1: { cb: abortRequest, text: T("S28") },
+            button1: { cb: cancelUpload, text: T("S28") },
             content: <Progress progressBar={progressBar} max={100} />,
         })
-        const base = isFwUpdate ? "updatefw" : useSettingsContextFn.getValue("HostTarget")
-        console.log(base)
-        createNewRequest(
-            espHttpURL(base),
-            { method: "POST", id: "upload", body: formData },
-            {
-                onSuccess: (_result: any) => {
-                    if (progressBar.update && typeof progressBar.update === "function") progressBar.update(100)
-                    modals.removeModal(modals.getModalIndex("upload"))
-                    webSocketService.disconnect(isFwUpdate ? "restart" : "connecting")
 
-                    if (isFwUpdate) {
-                        setTimeout(() => {
+        const base = uploadKind === "firmware" ? "updatefw" : useSettingsContextFn.getValue("HostTarget")
+        let accepted = false
+        try {
+            accepted = createNewRequest(
+                espHttpURL(base),
+                { method: "POST", id: "upload", body: formData },
+                {
+                    onSuccess: (result: any) => {
+                        const completedUploadKind = activeUploadKind.current
+                        if (!completedUploadKind) return
+
+                        const uploadResult =
+                            completedUploadKind === "firmware"
+                                ? parseFirmwareUploadResponse(result)
+                                : parseFileUploadResponse(result)
+                        if (!uploadResult.ok) {
+                            removeProgressModal()
+                            toasts.addToast({ content: uploadResult.message, type: "error" })
+                            finishUploadFlow()
+                            return
+                        }
+
+                        if (progressBar.update && typeof progressBar.update === "function") progressBar.update(100)
+                        removeProgressModal()
+                        activeUploadKind.current = null
+                        uploadFlowActive.current = false
+                        webSocketService?.disconnect(completedUploadKind === "firmware" ? "restart" : "connecting")
+
+                        if (completedUploadKind === "firmware") {
+                            setTimeout(() => window.location.reload(), restartdelay * 1000)
+                        } else {
                             window.location.reload()
-                        }, restartdelay * 1000)
-                    } else window.location.reload()
-                },
-                onFail: (error: any) => {
-                    modals.removeModal(modals.getModalIndex("upload"))
-                    toasts.addToast({ content: error, type: "error" })
-                },
-                onProgress: (e: number) => {
-                    if (progressBar.update && typeof progressBar.update === "function") progressBar.update(e)
-                },
-            }
-        )
+                        }
+                    },
+                    onFail: (error: HttpFailure) => {
+                        removeProgressModal()
+                        addHttpFailureToast(toasts, error)
+                        pendingUploadKind.current = null
+                        activeUploadKind.current = null
+                        finishUploadFlow()
+                    },
+                    onProgress: (e: number) => {
+                        if (progressBar.update && typeof progressBar.update === "function") progressBar.update(e)
+                    },
+                }
+            )
+        } catch (error) {
+            console.log(error)
+        }
+
+        if (!accepted) {
+            removeProgressModal()
+            toasts.addToast({ content: "Upload could not be started", type: "error" })
+            finishUploadFlow()
+        }
     }
 
     const valueTranslated = (value: string): string => {
@@ -767,26 +885,63 @@ const About: FunctionalComponent = (): JSX.Element => {
         return T(value)
     }
 
+    const filePickerCancelled = (_e: Event): void => {
+        filePickerOpen.current = false
+        cancelPendingUpload()
+    }
+
     const filesSelected = (_e: Event) => {
+        filePickerOpen.current = false
+        const uploadKind = pendingUploadKind.current
         const list = inputFilesRef.current?.files
-        if (!list || list.length === 0) return
-        const titleConfirmation = isFwUpdate ? T("S30") : T("S31")
+        if (!uploadKind || !list || list.length === 0) {
+            cancelPendingUpload()
+            return
+        }
+
+        const titleConfirmation = uploadKind === "firmware" ? T("S30") : T("S31")
         const fileList = Array.from(list)
 
-        const hasIncorrectWebUIName =
-            !isFwUpdate && fileList.some((file) => file.name.endsWith(".html.gz") && file.name !== "index.html.gz")
-
-        if (hasIncorrectWebUIName) {
-            const incorrectFiles = fileList.filter(
-                (file) => file.name.endsWith(".html.gz") && file.name !== "index.html.gz"
+        const showStandardConfirmation = () => {
+            const content = (
+                <CenterLeft>
+                    <ul>
+                        {fileList.reduce((accumulator: JSX.Element[], currentElement: File) => {
+                            return [...accumulator, <li key={currentElement.name}>{currentElement.name}</li>]
+                        }, [])}
+                    </ul>
+                </CenterLeft>
             )
+            showConfirmationModal({
+                modals,
+                title: titleConfirmation,
+                content,
+                button1: {
+                    cb: () => {
+                        uploadFiles()
+                    },
+                    text: T("S27"),
+                },
+                button2: {
+                    cb: cancelPendingUpload,
+                    text: T("S28"),
+                },
+            })
+        }
+
+        const incorrectFiles = uploadKind === "webui"
+            ? fileList.filter((file) => file.name.toLowerCase().endsWith(".html.gz") && file.name !== "index.html.gz")
+            : []
+        const canRenameWebUIFile =
+            incorrectFiles.length === 1 &&
+            fileList.length === 1 &&
+            !fileList.some((file) => file.name === "index.html.gz")
+
+        if (incorrectFiles.length > 0) {
 
             const renameAndUpload = () => {
                 useUiContextFn.haptic()
-                const modalIndex = modals.getModalIndex("filename-warning")
-                if (modalIndex !== -1) {
-                    modals.removeModal(modalIndex)
-                }
+                modals.removeModalById("filename-warning")
                 showConfirmationModal({
                     modals,
                     title: titleConfirmation,
@@ -807,6 +962,7 @@ const About: FunctionalComponent = (): JSX.Element => {
                         text: T("S27"),
                     },
                     button2: {
+                        cb: cancelPendingUpload,
                         text: T("S28"),
                     },
                 })
@@ -814,19 +970,14 @@ const About: FunctionalComponent = (): JSX.Element => {
 
             const continueAnyway = () => {
                 useUiContextFn.haptic()
-                const modalIndex = modals.getModalIndex("filename-warning")
-                if (modalIndex !== -1) {
-                    modals.removeModal(modalIndex)
-                }
+                modals.removeModalById("filename-warning")
                 showStandardConfirmation()
             }
 
             const cancelUpload = () => {
                 useUiContextFn.haptic()
-                const modalIndex = modals.getModalIndex("filename-warning")
-                if (modalIndex !== -1) {
-                    modals.removeModal(modalIndex)
-                }
+                modals.removeModalById("filename-warning")
+                cancelPendingUpload()
             }
 
             modals.addModal({
@@ -854,9 +1005,11 @@ const About: FunctionalComponent = (): JSX.Element => {
                 ),
                 footer: (
                     <div>
-                        <button class="btn btn-primary mx-2" onClick={renameAndUpload}>
-                            Rename and Upload
-                        </button>
+                        {canRenameWebUIFile && (
+                            <button class="btn btn-primary mx-2" onClick={renameAndUpload}>
+                                Rename and Upload
+                            </button>
+                        )}
                         <button class="btn mx-2" onClick={continueAnyway}>
                             Upload Anyway
                         </button>
@@ -865,36 +1018,10 @@ const About: FunctionalComponent = (): JSX.Element => {
                         </button>
                     </div>
                 ),
-                overlay: undefined,
-                hideclose: false,
+                overlay: true,
+                hideclose: true,
             })
             return
-        }
-
-        const showStandardConfirmation = () => {
-            const content = (
-                <CenterLeft>
-                    <ul>
-                        {fileList.reduce((accumulator: JSX.Element[], currentElement: File) => {
-                            return [...accumulator, <li key={currentElement.name}>{currentElement.name}</li>]
-                        }, [])}
-                    </ul>
-                </CenterLeft>
-            )
-            showConfirmationModal({
-                modals,
-                title: titleConfirmation,
-                content,
-                button1: {
-                    cb: () => {
-                        uploadFiles()
-                    },
-                    text: T("S27"),
-                },
-                button2: {
-                    text: T("S28"),
-                },
-            })
         }
 
         showStandardConfirmation()
@@ -910,7 +1037,10 @@ const About: FunctionalComponent = (): JSX.Element => {
             setIsLoading(false)
         }
 
+        window.addEventListener("focus", detectClosedFilePicker)
+
         return () => {
+            window.removeEventListener("focus", detectClosedFilePicker)
             mounted.current = false
             liveRefreshEnabled.current = false
             propsRequestInFlight.current = false
@@ -928,7 +1058,13 @@ const About: FunctionalComponent = (): JSX.Element => {
 
     return (
         <div id="about" class="container">
-            <input ref={inputFilesRef} type="file" class="d-none" onChange={filesSelected} />
+            <input
+                ref={inputFilesRef}
+                type="file"
+                class="d-none"
+                onChange={filesSelected}
+                onCancel={filePickerCancelled}
+            />
             <h4>
                 {T("S12").replace(
                     "%s",

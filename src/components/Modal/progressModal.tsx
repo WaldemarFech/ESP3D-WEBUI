@@ -17,34 +17,41 @@
 */
 import { Info } from "preact-feather"
 import { useUiContextFn } from "../../contexts"
-import type { ShowProgressModalParams, ProgressButton } from "../../types/modals.types"
+import type { ModalInstanceId } from "../../contexts/ModalsContext"
+import type { ShowProgressModalParams } from "../../types/modals.types"
 
-const showProgressModal = ({ modals, title, button1, content }: ShowProgressModalParams): void => {
+const showProgressModal = ({
+    modals,
+    title,
+    button1,
+    content,
+}: ShowProgressModalParams): ModalInstanceId | undefined => {
     const id = "progression"
+    let instanceId: ModalInstanceId | undefined
     const defaultCb1 = () => {
         useUiContextFn.haptic()
-        modals.removeModal(modals.getModalIndex(id))
+        if (instanceId) modals.removeModalByInstanceId(instanceId)
         if (button1 && button1.cb) button1.cb()
     }
 
-    if (modals.getModalIndex(id) == -1)
-        modals.addModal({
-            id: id,
-            title: (
-                <div class="text-primary feather-icon-container modal_title">
-                    <Info />
-                    <label>{title}</label>
-                </div>
-            ),
-            content: content,
-            footer: (
-                <button class="btn mx-2" onClick={defaultCb1}>
-                    {button1.text}
-                </button>
-            ),
-            //overlay: true,
-            hideclose: true,
-        })
+    instanceId = modals.addModal({
+        id,
+        title: (
+            <div class="text-primary feather-icon-container modal_title">
+                <Info />
+                <label>{title}</label>
+            </div>
+        ),
+        content,
+        footer: (
+            <button class="btn mx-2" onClick={defaultCb1}>
+                {button1.text}
+            </button>
+        ),
+        //overlay: true,
+        hideclose: true,
+    })
+    return instanceId
 }
 
 export { showProgressModal }

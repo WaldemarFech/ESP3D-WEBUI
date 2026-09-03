@@ -26,10 +26,12 @@ import Select from "../../components/Controls/Fields/Select"
 import { Save } from "preact-feather"
 import { T } from "../../components/Translations"
 import WifiStats from "./WifiStats"
-import { getWebSocketService } from "../../hooks/useWebSocketService"   
+import { useWebSocketService } from "../../hooks/useWebSocketService"
 import { GetSettingsCommand, Settings } from "../../Services/Commands/GetSettingsCommand"
 import { Command } from "../../Services/Commands/Command"
-import { useTargetCommands } from "../../hooks"
+import { addHttpFailureToast, useTargetCommands } from "../../hooks"
+import type { HttpFailure } from "../../types/http.types"
+import { requireWifiService } from "./wifiService"
 
 
 export type SystemStats = {
@@ -59,7 +61,7 @@ const WifiTab = () => {
     const [isSaving, setIsSaving] = useState<boolean>(false)
     const [hasChanges, setHasChanges] = useState<boolean>(false)
     const { targetCommands } = useTargetCommands()
-    const controllerService = getWebSocketService();
+    const controllerService = useWebSocketService()
     const { toasts } = useToastsContext()
     // Settings state
     const [originalSettings, setOriginalSettings] = useState<Settings>({})
@@ -148,32 +150,30 @@ const WifiTab = () => {
     const loadSettings = async () => {
         setIsLoading(true)
         try {
-              await controllerService
-            ?.send(new GetSettingsCommand())
-            .then((command) => {
-                const settings = command.getSettings();
-                setOriginalSettings(settings);
-                setWifiMode(settings.wifiMode || "");
-                setHostname(settings.hostname || "");
-                setStationSSID(settings.stationSSID || "");
-                setStationIpMode(settings.stationIpMode || "");
-                setStationPassword(settings.stationPassword || "");
-                setStationMinSecurity(settings.stationMinSecurity || "");
-                setStationIP(settings.stationIP || "");
-                setStationGateway(settings.stationGateway || "");
-                setStationNetmask(settings.stationNetmask || "");
-                setApSSID(settings.apSSID || "");
-                setApPassword(settings.apPassword || "");
-                setApChannel(settings.apChannel || "");
-                setApIP(settings.apIP || "");
-                setApCountry(settings.apCountry || "");
-                setIsLoading(false)
-            }).catch((error) => {
-                setIsLoading(false)
-                console.error("Failed to load WiFi settings:", error)
-            }) ;
-
-        } catch {
+            const command = await requireWifiService(controllerService).send(
+                new GetSettingsCommand()
+            )
+            const settings = command.getSettings()
+            setOriginalSettings(settings)
+            setWifiMode(settings.wifiMode || "")
+            setHostname(settings.hostname || "")
+            setStationSSID(settings.stationSSID || "")
+            setStationIpMode(settings.stationIpMode || "")
+            setStationPassword(settings.stationPassword || "")
+            setStationMinSecurity(settings.stationMinSecurity || "")
+            setStationIP(settings.stationIP || "")
+            setStationGateway(settings.stationGateway || "")
+            setStationNetmask(settings.stationNetmask || "")
+            setApSSID(settings.apSSID || "")
+            setApPassword(settings.apPassword || "")
+            setApChannel(settings.apChannel || "")
+            setApIP(settings.apIP || "")
+            setApCountry(settings.apCountry || "")
+        } catch (error) {
+            console.error("Failed to load WiFi settings:", error)
+            const message = error instanceof Error ? error.message : String(error)
+            toasts.addToast({ content: message, type: "error" })
+        } finally {
             setIsLoading(false)
         }
     }
@@ -212,9 +212,9 @@ const WifiTab = () => {
                     // // about = [...jsonResult.data]
                     setIsLoading(false)
                 },
-                onFail: (error: any) => {
+                onFail: (error: HttpFailure) => {
                     setIsLoading(false)
-                    toasts.addToast({ content: error, type: "error" })
+                    addHttpFailureToast(toasts, error)
                     console.log(error)
                 }})
 
@@ -270,32 +270,33 @@ const WifiTab = () => {
     const saveSettings = async () => {
         setIsSaving(true)
         try {
-          if (hostname !== originalSettings?.hostname) {
-                await controllerService?.send(
+            const service = requireWifiService(controllerService)
+            if (hostname !== originalSettings?.hostname) {
+                await service.send(
                     new Command(`$Hostname=${  hostname}`)
                 );
             }
 
             if (wifiMode !== originalSettings?.wifiMode) {
-                await controllerService?.send(
+                await service.send(
                     new Command(`$WiFi/Mode=${  wifiMode}`)
                 );
             }
 
             if (stationSSID !== originalSettings?.stationSSID) {
-                await controllerService?.send(
+                await service.send(
                     new Command(`$Sta/SSID=${  stationSSID}`)
                 );
             }
 
             if (stationIpMode !== originalSettings?.stationIpMode) {
-                await controllerService?.send(
+                await service.send(
                     new Command(`$Sta/IPMode=${  stationIpMode}`)
                 );
             }
 
             if (stationPassword !== originalSettings?.stationPassword) {
-                await controllerService?.send(
+                await service.send(
                     new Command(
                         `$Sta/Password=${  encodePassword(stationPassword ?? "")}`
                     )
@@ -303,37 +304,37 @@ const WifiTab = () => {
             }
 
             if (stationMinSecurity !==  originalSettings?.stationMinSecurity) {
-                await controllerService?.send(
+                await service.send(
                     new Command(`$Sta/MinSecurity=${  stationMinSecurity}`)
                 );
             }
 
             if (stationIP !== originalSettings?.stationIP) {
-                await controllerService?.send(
+                await service.send(
                     new Command(`$Sta/IP=${  stationIP}`)
                 );
             }
 
             if (stationGateway !== originalSettings?.stationGateway) {
-                await controllerService?.send(
+                await service.send(
                     new Command(`$Sta/Gateway=${  stationGateway}`)
                 );
             }
 
             if (stationNetmask !== originalSettings?.stationNetmask) {
-                await controllerService?.send(
+                await service.send(
                     new Command(`$Sta/Netmask=${  stationNetmask}`)
                 );
             }
 
             if (apSSID !== originalSettings?.apSSID) {
-                await controllerService?.send(
+                await service.send(
                     new Command(`$AP/SSID=${  apSSID}`)
                 );
             }
 
             if (apPassword !== originalSettings?.apPassword) {
-                await controllerService?.send(
+                await service.send(
                     new Command(
                         `$AP/Password=${  encodePassword(apPassword ?? "")}`
                     )
@@ -341,17 +342,17 @@ const WifiTab = () => {
             }
 
             if (apChannel !== originalSettings?.apChannel) {
-                await controllerService?.send(
+                await service.send(
                     new Command(`$AP/Channel=${  apChannel}`)
                 );
             }
 
             if (apIP !== originalSettings?.apIP) {
-                await controllerService?.send(new Command(`$AP/IP=${  apIP}`));
+                await service.send(new Command(`$AP/IP=${  apIP}`));
             }
 
             if (apCountry !== originalSettings?.apCountry) {
-                await controllerService?.send(
+                await service.send(
                     new Command(`$AP/Country=${  apCountry}`)
                 );
             }
@@ -361,6 +362,8 @@ const WifiTab = () => {
             useUiContextFn.haptic()
         } catch (error) {
             console.error("Failed to save settings:", error)
+            const message = error instanceof Error ? error.message : String(error)
+            toasts.addToast({ content: message, type: "error" })
         } finally {
             setIsSaving(false)
         }

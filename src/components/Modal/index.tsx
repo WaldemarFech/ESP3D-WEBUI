@@ -48,20 +48,20 @@ const ModalContainer: FunctionalComponent<ModalContainerProps> = ({ id }) => {
         <div class="modals-container" id={id}>
             {modals.modalList &&
                 modals.modalList.length > 0 &&
-                modals.modalList.map((modal, index) => {
+                modals.modalList.map((modal) => {
 
                     return (
                         <SpectreModal
                             class={`active`}
                             id={`modal-${  modal.id}`}
-                            key={index}
+                            key={modal.instanceId}
                             tabIndex="-1"
                         >
                             <SpectreModal.Overlay
                                 aria-label="Close"
                                 onClick={() => {
                                     useUiContextFn.haptic()
-                                    if (modal.overlay) modals.removeModal(index)
+                                    if (modal.overlay) modals.removeModalById(modal.id)
                                 }}
                             />
                             <SpectreModal.Container>
@@ -75,7 +75,7 @@ const ModalContainer: FunctionalComponent<ModalContainerProps> = ({ id }) => {
                                         aria-label="Close"
                                         onClick={() => {
                                             useUiContextFn.haptic()
-                                            modals.removeModal(index)
+                                            modals.removeModalById(modal.id)
                                         }}
                                     />
                                     <div className="modal-title h5">

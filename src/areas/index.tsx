@@ -36,11 +36,26 @@ import {
     useSettingsContext,
     useSettingsContextFn,
 } from "../contexts/SettingsContext"
-import { useSettings, useHttpQueue, useTargetCommands } from "../hooks"
-import { useEffect } from "preact/hooks"
+import {
+    getHttpFailureMessage,
+    useSettings,
+    useHttpQueue,
+    useTargetCommands,
+} from "../hooks"
+import { createFileUploadSuccessHandler } from "../Services/uploadResponse"
+import type { HttpFailure } from "../types/http.types"
+import { useEffect, useRef } from "preact/hooks"
+import {
+    createExtensionMessageListener,
+    registerExtensionMessageListener,
+} from "./extensionMessage"
+import type {
+    ExtensionMessageData,
+    ExtensionMessageEventLike,
+} from "./extensionMessage"
 import { Field, FieldGroup } from "../components/Controls"
 import { showKeepConnected, showModal } from "../components/Modal"
-import { espHttpURL, dispatchToExtensions } from "../components/Helpers"
+import { espHttpURL, dispatchToExtensions, generateUID } from "../components/Helpers"
 import { T, baseLangRessource } from "../components/Translations"
 import { HelpCircle, Layout } from "preact-feather"
 
@@ -79,7 +94,9 @@ const ContentContainer: FunctionalComponent = () => {
     const { toasts } = useToastsContext()
     const { modals } = useModalsContext()
 
-    const processExtensionMessage = (eventMsg: any) => {
+    const processExtensionMessage = (
+        eventMsg: ExtensionMessageEventLike & { data: ExtensionMessageData }
+    ) => {
         if (eventMsg.data.type && eventMsg.data.target == "webui") {
             switch (eventMsg.data.type) {
                 case "response":
@@ -100,14 +117,14 @@ const ContentContainer: FunctionalComponent = () => {
                                     eventMsg.data.id
                                 )
                         },
-                        onFail: (error: string) => {
+                        onFail: (error: HttpFailure) => {
                             console.log(error)
                             if (!eventMsg.data.noDispatch)
                                 dispatchToExtensions(
                                     "cmd",
                                     {
                                         status: "error",
-                                        error: error,
+                                        error: getHttpFailureMessage(error),
                                         initiator: eventMsg.data,
                                     },
                                     eventMsg.data.id
@@ -132,14 +149,14 @@ const ContentContainer: FunctionalComponent = () => {
                                     eventMsg.data.id
                                 )
                         },
-                        onFail: (error: string) => {
+                        onFail: (error: HttpFailure) => {
                             console.log(error)
                             if (!eventMsg.data.noDispatch)
                                 dispatchToExtensions(
                                     "query",
                                     {
                                         status: "error",
-                                        error: error,
+                                        error: getHttpFailureMessage(error),
                                         initiator: eventMsg.data,
                                     },
                                     eventMsg.data.id
@@ -177,14 +194,14 @@ const ContentContainer: FunctionalComponent = () => {
                                         eventMsg.data.id
                                     )
                             },
-                            onFail: (error: string) => {
+                            onFail: (error: HttpFailure) => {
                                 console.log(error)
                                 if (!eventMsg.data.noDispatch)
                                     dispatchToExtensions(
                                         "query",
                                         {
                                             status: "error",
-                                            error: error,
+                                            error: getHttpFailureMessage(error),
                                             initiator: eventMsg.data,
                                         },
                                         eventMsg.data.id
@@ -226,26 +243,40 @@ const ContentContainer: FunctionalComponent = () => {
                             body: formData,
                         },
                         {
-                            onSuccess: (result: string) => {
-                                if (!eventMsg.data.noDispatch)
-                                    dispatchToExtensions(
-                                        "upload",
-                                        {
-                                            status: "success",
-                                            response: result,
-                                            initiator: initiator,
-                                        },
-                                        eventMsg.data.id
-                                    )
-                            },
-                            onFail: (error: string) => {
+                            onSuccess: createFileUploadSuccessHandler({
+                                onAccepted: (result) => {
+                                    if (!eventMsg.data.noDispatch)
+                                        dispatchToExtensions(
+                                            "upload",
+                                            {
+                                                status: "success",
+                                                response: result,
+                                                initiator: initiator,
+                                            },
+                                            eventMsg.data.id
+                                        )
+                                },
+                                onRejected: (message) => {
+                                    if (!eventMsg.data.noDispatch)
+                                        dispatchToExtensions(
+                                            "upload",
+                                            {
+                                                status: "error",
+                                                error: message,
+                                                initiator: initiator,
+                                            },
+                                            eventMsg.data.id
+                                        )
+                                },
+                            }),
+                            onFail: (error: HttpFailure) => {
                                 if (!eventMsg.data.noDispatch)
                                     dispatchToExtensions(
                                         "upload",
                                         {
                                             status: "error",
-                                            error,
-                                            finitiator: initiator,
+                                            error: getHttpFailureMessage(error),
+                                            initiator: initiator,
                                         },
                                         eventMsg.data.id
                                     )
@@ -269,7 +300,7 @@ const ContentContainer: FunctionalComponent = () => {
                 case "download":
                     createNewRequest(
                         espHttpURL(eventMsg.data.url, eventMsg.data.args),
-                        { method: "GET", id: "download" },
+                        { method: "GET", id: `download-extension-${generateUID()}` },
                         {
                             onSuccess: (result: string) => {
                                 if (!eventMsg.data.noDispatch)
@@ -283,13 +314,13 @@ const ContentContainer: FunctionalComponent = () => {
                                         eventMsg.data.id
                                     )
                             },
-                            onFail: (error: string) => {
+                            onFail: (error: HttpFailure) => {
                                 if (!eventMsg.data.noDispatch)
                                     dispatchToExtensions(
                                         "download",
                                         {
                                             status: "error",
-                                            error: error,
+                                            error: getHttpFailureMessage(error),
                                             initiator: eventMsg.data,
                                         },
                                         eventMsg.data.id
@@ -356,7 +387,7 @@ const ContentContainer: FunctionalComponent = () => {
                             if (hasError()) {
                                 return
                             }
-                            modals.removeModal(modals.getModalIndex(content.id))
+                            modals.removeModalById(content.id)
                         }
 
                         setTimeout(() => {
@@ -383,7 +414,7 @@ const ContentContainer: FunctionalComponent = () => {
                             if (hasError()) {
                                 return
                             }
-                            modals.removeModal(modals.getModalIndex(content.id))
+                            modals.removeModalById(content.id)
                         }
 
                         setTimeout(() => {
@@ -746,21 +777,39 @@ const ContentContainer: FunctionalComponent = () => {
                             body: formDataExtensions,
                         },
                         {
-                            onSuccess: (result: string) => {
+                            onSuccess: createFileUploadSuccessHandler({
+                                onAccepted: () => {
+                                    dispatchToExtensions(
+                                        "extensionsData",
+                                        {
+                                            response: { status: "success" },
+                                            initiator: eventMsg.data,
+                                        },
+                                        eventMsg.data.id
+                                    )
+                                },
+                                onRejected: (message) => {
+                                    dispatchToExtensions(
+                                        "extensionsData",
+                                        {
+                                            response: {
+                                                status: "error",
+                                                error: message,
+                                            },
+                                            initiator: eventMsg.data,
+                                        },
+                                        eventMsg.data.id
+                                    )
+                                },
+                            }),
+                            onFail: (error: HttpFailure) => {
                                 dispatchToExtensions(
                                     "extensionsData",
                                     {
-                                        response: { status: "success" },
-                                        initiator: eventMsg.data,
-                                    },
-                                    eventMsg.data.id
-                                )
-                            },
-                            onFail: (error: string) => {
-                                dispatchToExtensions(
-                                    "extensionsData",
-                                    {
-                                        response: { status: "error" },
+                                        response: {
+                                            status: "error",
+                                            error: getHttpFailureMessage(error),
+                                        },
                                         initiator: eventMsg.data,
                                     },
                                     eventMsg.data.id
@@ -845,9 +894,17 @@ const ContentContainer: FunctionalComponent = () => {
         }
     }
 
+    const processExtensionMessageRef = useRef(processExtensionMessage)
+    processExtensionMessageRef.current = processExtensionMessage
+
     useEffect(() => {
         getConnectionSettings(getInterfaceSettings)
-        window.addEventListener("message", processExtensionMessage, false)
+        const listener = createExtensionMessageListener(
+            document,
+            () => processExtensionMessageRef.current,
+            window.location.href
+        )
+        return registerExtensionMessageListener(window, listener)
     }, [])
     return <ViewContainer />
 }

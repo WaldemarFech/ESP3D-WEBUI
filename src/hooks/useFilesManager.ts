@@ -23,8 +23,20 @@ import { useEffect, useState } from "preact/hooks"
 import { T } from "../components/Translations"
 import { useHttpFn } from "./useHttpQueue"
 import type { UseHttpFn } from "./useHttpQueue"
+import { addHttpFailureToast } from "./httpFailure"
+import {
+    createFileUploadBatchFailureHandler,
+    createFileUploadSuccessHandler,
+} from "../Services/uploadResponse"
+import { createSerialFailureHandler } from "./filesManagerCallbacks"
+import {
+    cancelScopedRequests,
+    filesRequestScope,
+} from "./filesManagerRequests"
+import type { HttpFailure } from "../types/http.types"
+import type { ModalInstanceId } from "../contexts/ModalsContext"
 import { useTargetCommands  } from "./useTargetCommands"
-import { espHttpURL, getBrowserTime } from "../components/Helpers"
+import { espHttpURL, generateUID, getBrowserTime } from "../components/Helpers"
 import { useUiContextFn, useModalsContext, useToastsContext } from "../contexts"
 import { showModal, showConfirmationModal, showProgressModal } from "../components/Modal"
 import Progress from "../components/Controls/Progress"
@@ -97,7 +109,7 @@ export function useFilesManager(): [FilesManagerState, FilesManagerActions] {
     const [filesList, setFilesList] = useState<FilesList | undefined>(
         filesListCache[currentFS]
     )
-    const { createNewRequest, abortRequest, removeAllRequests } = useHttpFn as UseHttpFn
+    const { createNewRequest, abortRequest } = useHttpFn as UseHttpFn
     const { targetCommands } = useTargetCommands()
     const { modals } = useModalsContext()
     const { toasts } = useToastsContext()
@@ -136,12 +148,14 @@ export function useFilesManager(): [FilesManagerState, FilesManagerActions] {
             onSuccess: (_result: string) => {
                 //Result is handled on ws so just do nothing
             },
-            onfail: (error: string) => {
-                console.log(error)
-                processor.stopCatchResponse()
-                setIsLoading(false)
-                toasts.addToast({ content: error, type: "error" })
-            },
+            onFail: createSerialFailureHandler({
+                stopCatchResponse: () => processor.stopCatchResponse(),
+                stopLoading: () => setIsLoading(false),
+                showError: (message) => {
+                    console.log(message)
+                    toasts.addToast({ content: message, type: "error" })
+                },
+            }),
         }
         targetCommands(command, ";", undefined, callbacks)
     }
@@ -160,10 +174,10 @@ export function useFilesManager(): [FilesManagerState, FilesManagerActions] {
                     setFilesList(filesListCache[currentFS])
                     setIsLoading(false)
                 },
-                onFail: (error: string) => {
+                onFail: (error: HttpFailure) => {
                     console.log(error)
                     setIsLoading(false)
-                    toasts.addToast({ content: error, type: "error" })
+                    addHttpFailureToast(toasts, error)
                 },
             }
         )
@@ -248,14 +262,32 @@ export function useFilesManager(): [FilesManagerState, FilesManagerActions] {
                 fileEntries.push({ file, fileName })
             }
 
-            showProgressModal({
+            const uploadRequestIds = filesRequestScope.uploadBatch(
+                generateUID(),
+                fileEntries.length
+            )
+            const cancelUploadBatch = (): void => {
+                cancelScopedRequests(uploadRequestIds, abortRequest)
+                setIsLoading(false)
+            }
+            let progressModalId: ModalInstanceId | undefined
+            const closeProgress = (): void => {
+                if (progressModalId) modals.removeModalByInstanceId(progressModalId)
+            }
+            const rejectUploadBatch = createFileUploadBatchFailureHandler({
+                // Stop only this upload batch; unrelated app requests retain ownership.
+                cancelBatch: () => cancelScopedRequests(uploadRequestIds, abortRequest),
+                closeProgress,
+                stopLoading: () => setIsLoading(false),
+                showError: (message) =>
+                    toasts.addToast({ content: message, type: "error" }),
+            })
+
+            progressModalId = showProgressModal({
                 modals,
                 title: T("S32"),
                 button1: {
-                    cb: () => {
-                        removeAllRequests()
-                        setIsLoading(false)
-                    },
+                    cb: cancelUploadBatch,
                     text: T("S28"),
                 },
                 content: totalFiles > 1
@@ -292,57 +324,52 @@ export function useFilesManager(): [FilesManagerState, FilesManagerActions] {
 
                 createNewRequest(
                     espHttpURL(cmd.url),
-                    { method: "POST", id: `upload-${i}`, body: formData },
+                    { method: "POST", id: uploadRequestIds[i], body: formData },
                     {
-                        onSuccess: (result: string) => {
-                            if (isLast) {
-                                //all files uploaded
-                                modals.removeModal(
-                                    modals.getModalIndex("progression")
-                                )
-                                const cmdpost = files.command(
-                                    currentFS,
-                                    "postUpload",
-                                    currentPath[currentFS],
-                                    fileEntries[0].fileName
-                                )
-                                if (
-                                    cmdpost.type == "error" ||
-                                    cmdpost.type == "none"
-                                ) {
-                                    filesListCache[currentFS] = files.command(
+                        onSuccess: createFileUploadSuccessHandler({
+                            onAccepted: (result) => {
+                                if (isLast) {
+                                    //all files uploaded
+                                    closeProgress()
+                                    const cmdpost = files.command(
                                         currentFS,
-                                        "formatResult",
-                                        result
+                                        "postUpload",
+                                        currentPath[currentFS],
+                                        fileEntries[0].fileName
                                     )
-                                    setFilesList(filesListCache[currentFS])
-                                    setIsLoading(false)
-                                } else if (cmdpost.type == "refresh") {
-                                    setTimeout(() => {
-                                        onRefresh(null, cmdpost.arg)
-                                    }, cmdpost.timeOut)
+                                    if (
+                                        cmdpost.type == "error" ||
+                                        cmdpost.type == "none"
+                                    ) {
+                                        filesListCache[currentFS] = files.command(
+                                            currentFS,
+                                            "formatResult",
+                                            result
+                                        )
+                                        setFilesList(filesListCache[currentFS])
+                                        setIsLoading(false)
+                                    } else if (cmdpost.type == "refresh") {
+                                        setTimeout(() => {
+                                            onRefresh(null, cmdpost.arg)
+                                        }, cmdpost.timeOut)
+                                    }
+                                } else {
+                                    //update status label for next file
+                                    const next = fileIndex + 1
+                                    if (
+                                        uploadStatusLabel.element &&
+                                        totalFiles > 1
+                                    ) {
+                                        uploadStatusLabel.element.textContent = `${next + 1} / ${totalFiles}: ${fileEntries[next].fileName}`
+                                    }
+                                    //reset progress bar for next file
+                                    if (progressBar.update) progressBar.update(0)
                                 }
-                            } else {
-                                //update status label for next file
-                                const next = fileIndex + 1
-                                if (
-                                    uploadStatusLabel.element &&
-                                    totalFiles > 1
-                                ) {
-                                    uploadStatusLabel.element.textContent = `${next + 1} / ${totalFiles}: ${fileEntries[next].fileName}`
-                                }
-                                //reset progress bar for next file
-                                if (progressBar.update) progressBar.update(0)
-                            }
-                        },
-                        onFail: (error) => {
-                            //stop remaining uploads on error
-                            removeAllRequests()
-                            modals.removeModal(
-                                modals.getModalIndex("progression")
-                            )
-                            toasts.addToast({ content: error, type: "error" })
-                            setIsLoading(false)
+                            },
+                            onRejected: rejectUploadBatch,
+                        }),
+                        onFail: (error: HttpFailure) => {
+                            rejectUploadBatch(error.message)
                         },
                         onProgress: (percent: number) => {
                             if (
@@ -401,18 +428,19 @@ export function useFilesManager(): [FilesManagerState, FilesManagerActions] {
             currentPath[currentFS],
             element.name
         )
-        showProgressModal({
+        const downloadRequestId = filesRequestScope.download(generateUID())
+        const progressModalId = showProgressModal({
             modals,
             title: T("S108"),
             button1: {
-                cb: abortRequest,
+                cb: () => abortRequest(downloadRequestId),
                 text: T("S28"),
             },
             content: h(Progress, { progressBar, max: 100 }),
         })
         createNewRequest(
             espHttpURL(cmd.url, cmd.args),
-            { method: "GET", id: "download" },
+            { method: "GET", id: downloadRequestId },
             {
                 onSuccess: (result: BlobPart) => {
                     if (
@@ -421,7 +449,7 @@ export function useFilesManager(): [FilesManagerState, FilesManagerActions] {
                     )
                         progressBar.update(100)
                     setTimeout(() => {
-                        modals.removeModal(modals.getModalIndex("progression"))
+                        if (progressModalId) modals.removeModalByInstanceId(progressModalId)
                     }, 2000)
 
                     const file = new Blob([result], {
@@ -447,9 +475,9 @@ export function useFilesManager(): [FilesManagerState, FilesManagerActions] {
                         }, 0)
                     }
                 },
-                onFail: (error) => {
-                    modals.removeModal(modals.getModalIndex("progression"))
-                    toasts.addToast({ content: error, type: "error" })
+                onFail: (error: HttpFailure) => {
+                    if (progressModalId) modals.removeModalByInstanceId(progressModalId)
+                    addHttpFailureToast(toasts, error)
                 },
                 onProgress: (percent: number) => {
                     if (
@@ -604,10 +632,16 @@ export function useFilesManager(): [FilesManagerState, FilesManagerActions] {
                             setFilesList(filesListCache[currentFS])
                             setIsLoading(false)
                         },
-                        onFail: (error) => {
+                        onFail: (error: HttpFailure) => {
                             console.log(error)
                             setIsLoading(false)
-                            toasts.addToast({ content: error, type: "error" })
+                            if (error.code == 503) {
+                                // FluidNC intentionally sheds directory lists
+                                // under low contiguous heap. Preserve the last
+                                // known list and let the operator retry refresh.
+                                return
+                            }
+                            addHttpFailureToast(toasts, error)
                         },
                     }
                 )

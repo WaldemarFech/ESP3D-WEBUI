@@ -26,7 +26,13 @@ import {
     useToastsContext,
 } from "../../contexts"
 import { ButtonImg, Loading } from "../../components/Controls"
-import { useHttpQueue, useSettings } from "../../hooks"
+import {
+    addHttpFailureToast,
+    useHttpQueue,
+    useSettings,
+} from "../../hooks"
+import { createFileUploadSuccessHandler } from "../../Services/uploadResponse"
+import type { HttpFailure } from "../../types/http.types"
 import {
     espHttpURL,
     checkDependencies,
@@ -440,13 +446,20 @@ const InterfaceTab = () => {
             espHttpURL(useSettingsContextFn.getValue("HostTarget")),
             { method: "POST", id: "preferences", body: formData },
             {
-                onSuccess: (result: string) => {
-                    setTimeout(() => {
-                        window.location.reload()
-                    }, 1000)
-                },
-                onFail: (error: string) => {
+                onSuccess: createFileUploadSuccessHandler({
+                    onAccepted: () => {
+                        setTimeout(() => {
+                            window.location.reload()
+                        }, 1000)
+                    },
+                    onRejected: (message) => {
+                        setIsLoading(false)
+                        toasts.addToast({ content: message, type: "error" })
+                    },
+                }),
+                onFail: (error: HttpFailure) => {
                     setIsLoading(false)
+                    addHttpFailureToast(toasts, error)
                 },
             }
         )

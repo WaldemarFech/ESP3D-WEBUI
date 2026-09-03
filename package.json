@@ -4,7 +4,7 @@
     "description": "Web UI for ESP3D V3 based FW ",
     "main": "index.js",
     "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1",
+        "test": "node --experimental-vm-modules --test --experimental-strip-types tests/*.test.mjs",
         "front": "webpack serve --config config/webpack.dev.js",
         "server": "nodemon config/server.js",
         "dev": "concurrently \"npm run server\" \"npm run front\"",
@@ -66,7 +66,7 @@
         "webpack-dev-server": "^4.9.2"
     },
     "dependencies": {
-        "preact": "^10.27.2",
+        "preact": "10.27.3",
         "preact-feather": "^4.2.1",
         "smoothie": "^1.36.0",
         "spectre.css": "michmela44/spectre"

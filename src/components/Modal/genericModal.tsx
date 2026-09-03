@@ -16,7 +16,7 @@
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 import { useUiContextFn } from "../../contexts"
-import type { ShowModalParams, ButtonConfig } from "../../types/modals.types"
+import type { ShowModalParams } from "../../types/modals.types"
 
 const showModal = ({
     modals,
@@ -32,13 +32,13 @@ const showModal = ({
     const defaultCb1 = () => {
         useUiContextFn.haptic()
         if (button1 && button1.noclose != true)
-            modals.removeModal(modals.getModalIndex(id))
+            modals.removeModalById(id)
         if (button1 && button1.cb) button1.cb()
     }
     const defaultCb2 = () => {
         useUiContextFn.haptic()
         if (button2 && button2.noclose != true)
-            modals.removeModal(modals.getModalIndex(id))
+            modals.removeModalById(id)
         if (button2 && button2.cb) button2.cb()
     }
     if (modals.getModalIndex(id) == -1)

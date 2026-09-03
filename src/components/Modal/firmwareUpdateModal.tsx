@@ -17,6 +17,7 @@
 */
 
 import { useUiContextFn } from "../../contexts"
+import { safeGitHubDownloadUrl } from "../../Services/GitHubDownloadUrl"
 import type { GitHubRelease } from "../../types/github.types"
 import type { ModalManager } from "../../types/modals.types"
 import { Download } from "preact-feather"
@@ -66,7 +67,7 @@ const showFirmwareUpdateModal = ({
         // Update info box
         if (filteredReleases.length > 0) {
             const selectedRelease = filteredReleases[0]
-            infoBox.innerHTML = `${selectedRelease.tag_name} - Released ${new Date(
+            infoBox.textContent = `${selectedRelease.tag_name} - Released ${new Date(
                 selectedRelease.published_at
             ).toLocaleDateString()}`
         }
@@ -104,9 +105,15 @@ const showFirmwareUpdateModal = ({
             return
         }
 
+        const downloadUrl = safeGitHubDownloadUrl(asset.browser_download_url)
+        if (!downloadUrl) {
+            console.error(`Rejected untrusted ${platform} asset URL`)
+            return
+        }
+
         // Trigger browser download
         const link = document.createElement("a")
-        link.href = asset.browser_download_url
+        link.href = downloadUrl
         link.download = asset.name
         document.body.appendChild(link)
         link.click()
@@ -116,10 +123,7 @@ const showFirmwareUpdateModal = ({
     const handleUploadFile = (e?: Event) => {
         if (e) e.stopPropagation()
         useUiContextFn.haptic()
-        const modalIndex = modals.getModalIndex("firmware-update")
-        if (modalIndex !== -1) {
-            modals.removeModal(modalIndex)
-        }
+        modals.removeModalById("firmware-update")
         onUploadFile()
     }
 
@@ -132,10 +136,7 @@ const showFirmwareUpdateModal = ({
     const closeModal = (e?: Event) => {
         if (e) e.stopPropagation()
         useUiContextFn.haptic()
-        const modalIndex = modals.getModalIndex("firmware-update")
-        if (modalIndex !== -1) {
-            modals.removeModal(modalIndex)
-        }
+        modals.removeModalById("firmware-update")
     }
 
     const compareVersions = (current: string, target: string): string => {
@@ -234,7 +235,7 @@ const showFirmwareUpdateModal = ({
                                 const infoBox = document.getElementById("firmware-selected-release-info")
                                 if (infoBox && filteredReleases[selectedReleaseIndex]) {
                                     const selectedRelease = filteredReleases[selectedReleaseIndex]
-                                    infoBox.innerHTML = `${selectedRelease.tag_name} - Released ${new Date(
+                                    infoBox.textContent = `${selectedRelease.tag_name} - Released ${new Date(
                                         selectedRelease.published_at
                                     ).toLocaleDateString()}`
                                 }

@@ -1,4 +1,4 @@
-import { WebSocketAdapter } from "./WebSocketAdapter"
+import { WebSocketAdapter, WebSocketTransport } from "./WebSocketAdapter"
 import { sleep } from "../../src/utils"
 import { Command, CommandState } from "./Commands/Command"
 import type { Toast } from "../../src/contexts/ToastsContext"
@@ -22,6 +22,11 @@ export enum ControllerStatus {
 
 export type ControllerStatusListener = (status: ControllerStatus) => void
 
+interface PendingCommand {
+    reject: (reason?: unknown) => void
+    timer: ReturnType<typeof setTimeout> | undefined
+}
+
 /**
  * Service context for dependency injection
  * Provides access to app-level contexts from within the service
@@ -38,12 +43,22 @@ export interface ServiceContext {
     uiSettings?: {
         getValue: (id: string) => any
     }
+    connectionSettings?: {
+        current?: {
+            HostName?: string
+        }
+    }
 }
 
 export class WebSocketService {
     private wsAdapter: WebSocketAdapter
     private buffer: string = ""
+    private connectPromise: Promise<ControllerStatus> | undefined
+    private connectionEpoch = 0
+    private connectionLossHandled = false
+    private maxReconnectToastShown = false
     private commands: Command[] = []
+    private pendingCommands = new Map<Command, PendingCommand>()
     private _status: ControllerStatus = ControllerStatus.DISCONNECTED
     private currentVersion: string | undefined
     private statusListeners: ControllerStatusListener[] = []
@@ -52,17 +67,18 @@ export class WebSocketService {
     private reconnectAttempts: number = 0
     private maxReconnectAttempts: number = 4
     private baseRetryDelayMs: number = 2000
-    private reconnectTimeoutId: NodeJS.Timeout | undefined
+    private reconnectTimeoutId: ReturnType<typeof setTimeout> | undefined
     private isManualDisconnect: boolean = false
 
     // Notification handler (optional)
     private notificationHandler: NotificationHandler | undefined
 
     // Ping/keep-alive settings
-    private pingIntervalId: NodeJS.Timeout | undefined
+    private pingIntervalId: ReturnType<typeof setTimeout> | undefined
     private pingDelayMs: number = 5000 // 5 seconds
     private isPingPaused: boolean = false
     private sessionId: string | undefined
+    private pingListener: ((timeRemaining: number, maxTime: number) => void) | undefined
     private pingListeners: Array<(timeRemaining: number, maxTime: number) => void> = []
     private sessionTimeoutListener: (() => void) | undefined
 
@@ -70,8 +86,8 @@ export class WebSocketService {
     private errorHandler: ((errorCode: string, errorMessage: string) => void) | undefined
 
     // Data routing (for core message processing)
+    private dataListener: ((type: string, data: string) => void) | undefined
     private dataListeners: Array<(type: string, data: string) => void> = []
-    private binaryDataListeners: Array<(data: string) => void> = []
 
     // Connection state listener (for UI updates)
     // Matches UiContext ConnectionState: { connected: boolean; page: string; extraMsg?: string; updating?: boolean }
@@ -86,15 +102,18 @@ export class WebSocketService {
         this.wsAdapter = wsAdapter
         this.notificationHandler = notificationHandler
 
-        // Register main data listener
-        this.wsAdapter.addReader(this.onData)
-        this.wsAdapter.addReader(this._handleSystemMessage)
+        // Register one text listener so controller control frames are handled
+        // exclusively and cannot contaminate the newline-framed data buffer.
+        this.wsAdapter.addReader(this._handleTextData)
 
         // Register binary data listener for terminal/stream data
         this.wsAdapter.addBinaryReader(this._handleBinaryData)
 
-        // Register error listener
+        // Register error listener and one per-service close listener. The adapter
+        // recreates transports; this listener is therefore attached to the adapter,
+        // not to a single native socket instance.
         this.wsAdapter.addErrorListener(this._handleWebSocketError)
+        this.wsAdapter.addCloseListener(this._handleWebSocketClose)
     }
 
     /**
@@ -110,21 +129,39 @@ export class WebSocketService {
      * Automatically attempts to reconnect on connection loss
      */
     async connect(): Promise<ControllerStatus> {
+        if (this.connectPromise) return this.connectPromise
+        const epoch = ++this.connectionEpoch
+        const connectPromise = this._connect(epoch)
+        this.connectPromise = connectPromise
+        try {
+            return await connectPromise
+        } finally {
+            if (this.connectPromise === connectPromise) this.connectPromise = undefined
+        }
+    }
+
+    private async _connect(epoch: number): Promise<ControllerStatus> {
         try {
             this.status = ControllerStatus.CONNECTING
             this.isManualDisconnect = false
+            this.connectionLossHandled = false
             this._updateConnectionState({ connected: false, page: "connecting" })
-            if (!this.wsAdapter.isOpen()) {
-                await this.wsAdapter.open()
-            }
+            await this.wsAdapter.open()
+            if (epoch !== this.connectionEpoch) throw new Error("WebSocket connection attempt was cancelled")
 
+            this.buffer = ""
             this.status = ControllerStatus.CONNECTED
+            this.connectionLossHandled = false
             this.reconnectAttempts = 0
+            this.maxReconnectToastShown = false
+            this._cancelReconnection()
 
             // Start ping mechanism
             this._startPing()
 
-            // Update connection state
+            // Update connection state and clear the transient "Connecting"
+            // document title even when the routed page was already rendered.
+            document.title = this.serviceContext?.connectionSettings?.current?.HostName || "ESP3D"
             this._updateConnectionState({ connected: true, page: "/" })
 
             // Notify extensions that we're connected
@@ -132,51 +169,72 @@ export class WebSocketService {
                 this.serviceContext.extensionsNotify("notification", { isConnected: true }, "all")
             }
 
-            // Set up disconnect listener for auto-reconnection
-            this.wsAdapter.getNativeWebSocket().addEventListener("close", () => {
-                if (this.status === ControllerStatus.CONNECTED) {
-                    this._handleConnectionLost()
-                }
-            })
-
             return this.status
         } catch (error) {
+            if (epoch !== this.connectionEpoch) throw error
             console.error("Failed to connect to controller:", error)
-            this.status = ControllerStatus.DISCONNECTED
-            this._scheduleReconnection()
+            if (!this.connectionLossHandled) this.status = ControllerStatus.DISCONNECTED
+            if (!this.isManualDisconnect) this._scheduleReconnection()
             throw error
         }
     }
 
     /**
      * Disconnects from the controller
-     * @param stopReconnect - If true, marks as manually disconnected (no auto-reconnect)
      * @param reason - Reason for disconnection (for UI feedback)
+     * @param stopReconnect - If true, marks as manually disconnected (no auto-reconnect)
+     * @param cleanup - If true, stops app activity and clears disconnect-owned UI state
      */
-    async disconnect(reason: string = "disconnected", stopReconnect: boolean = true): Promise<void> {
+    async disconnect(reason: string = "disconnected", stopReconnect: boolean = true, cleanup = true): Promise<void> {
         console.log("Disconnect:", reason);
 
+        ++this.connectionEpoch
+        this.connectPromise = undefined
+        this.buffer = ""
         this._updateConnectionState({ connected: false, page: reason })
         this._stopPing()
+        this._rejectPendingCommands(new Error(`WebSocket disconnected: ${reason}`))
         if (stopReconnect) {
             this.isManualDisconnect = true
             this.status = ControllerStatus.DISCONNECTED
             this._cancelReconnection()
         }
 
-        this._performDisconnectCleanup()
+        if (cleanup) this._performDisconnectCleanup()
         return this.wsAdapter.close()
     }
 
     /**
-     * Handles connection loss and initiates auto-reconnection
+     * Idempotently handles externally detected connection loss. Unlike
+     * disconnect(), this does not invalidate an in-flight connect epoch; it
+     * rearms/schedules reconnect even while the socket is still CONNECTING.
      */
-    private _handleConnectionLost(): void {
-        console.log("Connection lost, attempting auto-reconnect")
-        this.status = ControllerStatus.CONNECTION_LOST
-        this._updateConnectionState({ connected: false, page: "connectionlost" })
-        this._showToast(createConnectionErrorToast("connectionlost"))
+    handleConnectionLoss(reason: string = "connectionlost"): void {
+        if (this.isManualDisconnect) return
+        if (!this.connectionLossHandled) {
+            this.connectionLossHandled = true
+            this.buffer = ""
+            this._stopPing()
+            this._rejectPendingCommands(new Error("WebSocket connection lost"))
+            console.log("Connection lost, attempting auto-reconnect")
+            this.status = ControllerStatus.CONNECTION_LOST
+            this._updateConnectionState({ connected: false, page: reason })
+            this._showToast(createConnectionErrorToast(reason))
+        }
+        // Externally detected loss (for example repeated HTTP no-answer) can
+        // occur while the browser still reports this socket OPEN. Retire it so
+        // reconnect cannot immediately reuse a transport already deemed stale.
+        void this.wsAdapter.close().catch((error) => {
+            console.error("Failed to retire stale WebSocket:", error)
+        })
         this._scheduleReconnection()
+    }
+
+    private _handleWebSocketClose = (): void => {
+        this._stopPing()
+        if (this.status === ControllerStatus.CONNECTED) {
+            this.handleConnectionLoss()
+        }
     }
 
     /**
@@ -188,23 +246,39 @@ export class WebSocketService {
             return
         }
 
+        if (this.reconnectTimeoutId) return
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             console.error(`Max reconnection attempts (${this.maxReconnectAttempts}) reached`)
+            // Retire any final in-flight attempt before publishing terminal
+            // cleanup. Otherwise a late open can resurrect CONNECTED after the
+            // app has already stopped polling and cleared disconnect-owned UI.
+            ++this.connectionEpoch
+            this.connectPromise = undefined
+            this.isManualDisconnect = true
             this.status = ControllerStatus.DISCONNECTED
-            this._showToast(createMaxReconnectionToast())
+            void this.wsAdapter.close().catch((error) => {
+                console.error("Failed to retire final WebSocket attempt:", error)
+            })
+            if (!this.maxReconnectToastShown) {
+                this.maxReconnectToastShown = true
+                this._showToast(createMaxReconnectionToast())
+            }
             this._updateConnectionState({ connected: false, page: "connectionlost" })
             this._performDisconnectCleanup()
             return
         }
 
-        this.reconnectAttempts++
-        this._showToast(createReconnectionToast(this.reconnectAttempts, this.maxReconnectAttempts))
-
-        this._cancelReconnection()
-        this.reconnectTimeoutId = setTimeout(
-            () => this.connect().catch(() => this._scheduleReconnection()),
-            this.baseRetryDelayMs
-        )
+        this.reconnectTimeoutId = setTimeout(async () => {
+            this.reconnectTimeoutId = undefined
+            if (this.isManualDisconnect) return
+            this.reconnectAttempts++
+            this._showToast(createReconnectionToast(this.reconnectAttempts, this.maxReconnectAttempts))
+            try {
+                await this.connect()
+            } catch {
+                // connect() schedules the next attempt after a failed open.
+            }
+        }, this.baseRetryDelayMs)
     }
 
     /**
@@ -260,19 +334,29 @@ export class WebSocketService {
      * Handles incoming system messages (NOTIFICATION, ERROR, PING, CURRENTID, etc.)
      * Using arrow function to preserve 'this' context when passed as a callback
      */
-    private _handleSystemMessage = (message: string): void => {
-        const parts = message.split(":")
-        if (parts.length < 2) {
-            return
+    private _handleTextData = (message: string): void => {
+        const lineBreakIndex = message.search(/[\r\n]/)
+        if (lineBreakIndex > 0) {
+            const firstLine = message.substring(0, lineBreakIndex)
+            if (this._handleSystemMessage(firstLine)) {
+                this.onData(message.substring(lineBreakIndex + 1))
+                return
+            }
         }
+        if (!this._handleSystemMessage(message)) this.onData(message)
+    }
 
-        const messageType = parts[0].toUpperCase()
+    private _handleSystemMessage = (message: string): boolean => {
+        const parts = message.split(":")
+        if (parts.length < 2) return false
+
+        const messageType = parts[0].replace(/_/g, "").toUpperCase()
 
         switch (messageType) {
             case "CURRENTID": {
                 // Receive and store session ID both internally and in service context
                 if (parts[1]) {
-                    const sessionId = parts[1]
+                    const sessionId = parts[1].replace(/[\r\n]+$/, "")
                     console.log(`Received session ID: ${  sessionId}`)
                     this.setSessionId(sessionId)
                 }
@@ -285,13 +369,17 @@ export class WebSocketService {
 
                     // Disconnect if this is a different session ID than ours
                     if (incomingSessionId !== this.getSessionId()) {
-                        if ((this.serviceContext?.uiSettings?.getValue("disconnectonotherlogin") ?? true)) {                        
+                        // The setting is labelled "Allow multiple WebUI connections":
+                        // true permits this session to remain connected. Older targets
+                        // may still emit ACTIVEID, so retain this cross-target guard.
+                        const allowMultiple = this.serviceContext?.uiSettings?.getValue("disconnectonotherlogin") ?? true
+                        if (!allowMultiple) {
                             console.warn(`Another session connected with different ID ${incomingSessionId}, disconnecting`)
-                            // this._showToast(createConnectionErrorToast("already connected"))
+                            this._showToast(createConnectionErrorToast("already connected"))
                             this.disconnect("already connected")
+                        } else {
+                            console.log(`Another session connected with different ID ${incomingSessionId}, multiple connections allowed`)
                         }
-                        else
-                            console.log(`Another session connected with different ID ${incomingSessionId}, but disconnectonotherlogin = false`)
                     }
                 }
                 break
@@ -331,7 +419,10 @@ export class WebSocketService {
                 }
                 break
             }
+            default:
+                return false
         }
+        return true
     }
 
     private onData = (data: string): void => {
@@ -379,7 +470,7 @@ export class WebSocketService {
      */
     async send<T extends Command>(command: T, timeoutMs: number = 0): Promise<T> {
         if (!this.wsAdapter.isOpen()) {
-            return command
+            throw new Error("WebSocket is not connected")
         }
 
         if (command.debugSend) {
@@ -393,28 +484,54 @@ export class WebSocketService {
 
         this.commands.push(command)
         const result = new Promise<T>((resolve, reject) => {
-            let timer: NodeJS.Timeout | undefined
+            let timer: ReturnType<typeof setTimeout> | undefined
+            const pending: PendingCommand = { reject, timer }
             if (timeoutMs > 0) {
                 timer = setTimeout(() => {
-                    this._removeCommand(command)
-                    reject("Command timed out")
+                    this._rejectCommand(command, new Error("Command timed out"))
                 }, timeoutMs)
+                pending.timer = timer
             }
-            (command as Command).onDone = async () => {
-                if (timer) {
-                    clearTimeout(timer)
-                }
+            this.pendingCommands.set(command, pending)
+            command.onDone = async () => {
+                this.pendingCommands.delete(command)
+                if (timer) clearTimeout(timer)
                 resolve(command)
             }
         })
 
         this.buffer = ""
-        await this.wsAdapter.write(`${command.getCommand()  }\n`)
+        try {
+            await this.wsAdapter.write(`${command.getCommand()  }\n`)
+        } catch (error) {
+            this._rejectCommand(command, error)
+        }
         return result
     }
 
     private _removeCommand(command: Command): void {
+        const pending = this.pendingCommands.get(command)
+        if (pending?.timer) clearTimeout(pending.timer)
+        this.pendingCommands.delete(command)
         this.commands = this.commands.filter((c) => c !== command)
+    }
+
+    private _rejectCommand(command: Command, reason: unknown): void {
+        const pending = this.pendingCommands.get(command)
+        if (!pending) return
+        this._removeCommand(command)
+        pending.reject(reason)
+    }
+
+    private _rejectPendingCommands(reason: unknown): void {
+        const pendingCommands = [...this.pendingCommands.values()]
+        this.pendingCommands.clear()
+        this.commands = []
+        this.buffer = ""
+        pendingCommands.forEach((pending) => {
+            if (pending.timer) clearTimeout(pending.timer)
+            pending.reject(reason)
+        })
     }
 
     /**
@@ -423,9 +540,12 @@ export class WebSocketService {
     async hardReset(): Promise<void> {
         this.status = ControllerStatus.CONNECTING
         try {
+            this._cancelReconnection()
             this.reconnectAttempts = 0
-            await this.disconnect("disconnected", false)
+            await this.disconnect("disconnected", false, false)
+            const resetEpoch = this.connectionEpoch
             await sleep(500)
+            if (this.isManualDisconnect || resetEpoch !== this.connectionEpoch) return
             await this.connect()
         } catch (error) {
             console.error("Hard reset failed:", error)
@@ -512,11 +632,9 @@ export class WebSocketService {
 
             if (!this.isPingPaused && this.wsAdapter.isOpen()) {
                 const pingmsg = `PING:${this.sessionId || "none"}`
-                try {
-                    this.wsAdapter.write(pingmsg)
-                } catch (error) {
+                this.wsAdapter.write(pingmsg).catch((error) => {
                     console.error("Failed to send ping:", error)
-                }
+                })
             }
 
             // Schedule next ping
@@ -550,11 +668,18 @@ export class WebSocketService {
         const maxTime = parseInt(parts[2], 10)
 
         // Notify listeners
+        if (this.pingListener) {
+            try {
+                this.pingListener(timeRemaining, maxTime)
+            } catch (_error) {
+                console.error("Error in ping listener:", _error)
+            }
+        }
         this.pingListeners.forEach((listener) => {
             try {
                 listener(timeRemaining, maxTime)
-            } catch (error) {
-                console.error("Error in ping listener:", error)
+            } catch (_error) {
+                console.error("Error in ping listener:", _error)
             }
         })
 
@@ -579,6 +704,10 @@ export class WebSocketService {
         return () => {
             this.pingListeners = this.pingListeners.filter((l) => l !== listener)
         }
+    }
+
+    setPingListener(listener: ((timeRemaining: number, maxTime: number) => void) | undefined): void {
+        this.pingListener = listener
     }
 
     /**
@@ -631,9 +760,11 @@ export class WebSocketService {
     private _handleBinaryData = (data: ArrayBuffer): void => {
         try {
             const decodedString = new TextDecoder("utf-8").decode(data)
-            // Route binary data to listeners as stream type
-            this._notifyDataListeners("stream", decodedString)
-            this.onData(decodedString)
+            // FluidNC emits command replies as binary WebSocket frames. Feed
+            // them through the command parser while a request is pending; only
+            // unsolicited binary payload is terminal/stream data for the UI.
+            if (this.commands.length > 0) this.onData(decodedString)
+            else this._notifyDataListeners("stream", decodedString)
         } catch (error) {
             console.error("Error decoding binary data:", error)
         }
@@ -643,18 +774,10 @@ export class WebSocketService {
      * Handles WebSocket errors (equivalent to onErrorCB in WsContext)
      * Shows error toast and increments reconnection counter
      */
-    private _handleWebSocketError = (error: Event): void => {
+    private _handleWebSocketError = (_error: Event): void => {
         console.log("WebSocket error occurred")
-        this.reconnectAttempts++
-
-        this._updateConnectionState({ connected: false, page: "error" })
-        // Show error toast to user
-        this._showToast({
-            content: "WebSocket connection error. Attempting to reconnect...",
-            type: "error",
-        })
-
-        this._scheduleReconnection()
+        if (this.status !== ControllerStatus.CONNECTED || this.connectionLossHandled || this.isManualDisconnect) return
+        this.handleConnectionLoss()
     }
 
     /**
@@ -670,9 +793,24 @@ export class WebSocketService {
     }
 
     /**
+     * Replaces the context-owned data route while preserving any additional
+     * listeners registered by callers.
+     */
+    setDataListener(listener: ((type: string, data: string) => void) | undefined): void {
+        this.dataListener = listener
+    }
+
+    /**
      * Notifies all data listeners
      */
     private _notifyDataListeners(type: string, data: string): void {
+        if (this.dataListener) {
+            try {
+                this.dataListener(type, data)
+            } catch (error) {
+                console.error("Error in data listener:", error)
+            }
+        }
         this.dataListeners.forEach((listener) => {
             try {
                 listener(type, data)
@@ -705,8 +843,8 @@ export class WebSocketService {
         if (this.connectionStateListener) {
             try {
                 this.connectionStateListener(state)
-            } catch (error) {
-                console.error("Error in connection state listener:", error)
+            } catch (_error) {
+                console.error("Error in connection state listener:", _error)
             }
         }
     }
@@ -714,7 +852,7 @@ export class WebSocketService {
     /**
      * Gets the native WebSocket for advanced usage or fallback scenarios
      */
-    getNativeWebSocket(): WebSocket {
+    getNativeWebSocket(): WebSocketTransport {
         return this.wsAdapter.getNativeWebSocket()
     }
 }
