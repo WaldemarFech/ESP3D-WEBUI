@@ -21,6 +21,7 @@ import {
     espHttpURL,
     isLimitedEnvironment,
 } from "../components/Helpers"
+import { ensureSharedDistanceKeys } from "../Settings/keymapMigration"
 import { useHttpQueue, useTargetCommands } from "../hooks/"
 import {
     useUiContext,
@@ -362,6 +363,19 @@ const useSettings = (): UseSettingsReturn => {
                     )
                     //console.log("Format preferences.settings")
                     formatPreferences(importResult.preferences)
+                    // Devices saved by older builds lack the Z jog-distance
+                    // keymap entries; inherit the XY +/- keys onto missing Z
+                    // actions so one key adjusts both axis groups. Runs after
+                    // formatPreferences, when entries use the runtime shape.
+                    const jogSection = importResult.preferences.jog
+                    if (Array.isArray(jogSection)) {
+                        const keymapEntry = jogSection.find(
+                            (entry: any) => entry && entry.id == "keymap"
+                        )
+                        if (keymapEntry) {
+                            keymapEntry.value = ensureSharedDistanceKeys(keymapEntry.value)
+                        }
+                    }
                     //console.log(importResult.preferences)
                     uisettings.set(
                         JSON.parse(JSON.stringify(importResult.preferences))

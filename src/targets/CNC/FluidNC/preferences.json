@@ -635,12 +635,12 @@
                     {
                         "id": "btndistSelZ+",
                         "name": "btndistSelZ+",
-                        "key": "5"
+                        "key": "+"
                     },
                     {
                         "id": "btndistSelZ-",
                         "name": "btndistSelZ-",
-                        "key": "."
+                        "key": "-"
                     },
                     {
                         "id": "btnStop",
