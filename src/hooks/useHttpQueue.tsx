@@ -19,6 +19,7 @@
 import { useState, useRef } from "preact/hooks"
 import { useHttpQueueContext } from "../contexts"
 import { generateUID } from "../components/Helpers"
+import type { HttpFailure } from "../types/http.types"
 
 // Type definitions
 interface HttpRequestParams {
@@ -31,7 +32,7 @@ interface HttpRequestParams {
 
 interface HttpCallbacks {
     onSuccess?: (result: string) => void
-    onFail?: (error: string) => void
+    onFail?: (error: HttpFailure) => void
     onProgress?: (percent: number) => void
 }
 
@@ -40,8 +41,8 @@ interface HttpRequest {
     url: string
     params: HttpRequestParams
     onSuccess: (result: string | Blob) => void
-    onProgress: (e: ProgressEvent) => void
-    onFail: ((error: string) => void) | null
+    onProgress: (percent: number) => void
+    onFail: ((error: HttpFailure) => void) | null
 }
 
 interface HttpQueueReturn {
@@ -68,12 +69,11 @@ const useHttpQueue = (): HttpQueueReturn => {
     const {
         addInQueue,
         addInTopQueue,
-        removeRequests,
-        getCurrentRequest,
+        cancelRequests,
         removeAllRequests,
         processRequests,
     } = useHttpQueueContext()
-    const [killOnUnmount, setKillOnUnmount] = useState<boolean>(true)
+    const [, setKillOnUnmount] = useState<boolean>(true)
     const localRequests = useRef<string[]>([])
 
     const createNewTopRequest = (url: string, params: HttpRequestParams, callbacks: HttpCallbacks = {}): void => {
@@ -95,7 +95,7 @@ const useHttpQueue = (): HttpQueueReturn => {
                 if (onProgressCb) onProgressCb(percent)
             },
             onFail: onFailCb
-                ? (error: string) => {
+                ? (error: HttpFailure) => {
                       if (onFailCb) onFailCb(error)
                   }
                 : null,
@@ -122,7 +122,7 @@ const useHttpQueue = (): HttpQueueReturn => {
                 onProgress: (percent: number) => {
                     if (onProgressCb) onProgressCb(percent)
                 },
-                onFail: (error: string) => {
+                onFail: (error: HttpFailure) => {
                     localRequests.current = localRequests.current.filter((requestId) => requestId != id)
                     if (onFailCb) onFailCb(error)
                 },
@@ -137,16 +137,11 @@ const useHttpQueue = (): HttpQueueReturn => {
         }
     }
 
+    // A concrete id is always scoped to matching descriptors. An omitted id (or
+    // explicit undefined) retains the legacy global-abort behavior.
     const abortRequest = (id?: string): void => {
-        if (id) {
-            removeRequests(id)
-        }
-        const currentRequest = getCurrentRequest()
-        if (currentRequest) {
-            currentRequest.abort()
-        } else {
-            // Toaster no current request
-        }
+        if (id !== undefined) cancelRequests(id)
+        else removeAllRequests()
     }
 
     const processRequestsNow = (): void => {

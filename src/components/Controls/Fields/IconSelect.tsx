@@ -59,7 +59,7 @@ const IconSelect: FunctionalComponent<IconSelectProps> = ({
                     const onSelect = (_e: TargetedMouseEvent<HTMLButtonElement>) => {
                         useUiContextFn.haptic()
                         setValue && setValue(element)
-                        modals.removeModal(modals.getModalIndex(modalId))
+                        modals.removeModalById(modalId)
                     }
                     if (value == element)
                         return (
@@ -86,7 +86,6 @@ const IconSelect: FunctionalComponent<IconSelectProps> = ({
         )
         const modalId = "iconSelection"
         //TODO generate icon list and current selected
-        //modals.removeModal(modals.getModalIndex(modalId));
         showModal({
             modals,
             title: T("S134"),

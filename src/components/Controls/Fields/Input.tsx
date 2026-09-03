@@ -296,11 +296,7 @@ const Input: FunctionalComponent<InputProps> = ({
                                                     onClick={(_e: TargetedMouseEvent<HTMLLIElement>) => {
                                                         useUiContextFn.haptic()
                                                         setValue && setValue(option.value)
-                                                        modals.removeModal(
-                                                            modals.getModalIndex(
-                                                                modalId
-                                                            )
-                                                        )
+                                                        modals.removeModalById(modalId)
                                                     }}
                                                 >
                                                     {option.display}

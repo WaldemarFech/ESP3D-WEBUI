@@ -20,6 +20,7 @@ import { useUiContextFn } from "../../contexts"
 import type { GitHubRelease } from "../../types/github.types"
 import type { ModalManager } from "../../types/modals.types"
 import { BookOpen } from "preact-feather"
+import { getTruncatedReleaseBody } from "./releaseNotesMarkdown"
 
 interface ReleaseNotesModalParams {
     modals: ModalManager
@@ -52,7 +53,19 @@ const showReleaseNotesModal = ({ modals, releases, githubUrl }: ReleaseNotesModa
             const titleDiv = document.createElement("div")
             const title = document.createElement("h5")
             title.className = "text-primary mb-1"
-            title.innerHTML = `${release.name}${index === 0 ? '<span class="text-success ml-2">(Latest)</span>' : ""}${release.prerelease ? '<span class="text-warning ml-2">(Pre-release)</span>' : ""}`
+            title.textContent = release.name
+            if (index === 0) {
+                const latest = document.createElement("span")
+                latest.className = "text-success ml-2"
+                latest.textContent = "(Latest)"
+                title.appendChild(latest)
+            }
+            if (release.prerelease) {
+                const prerelease = document.createElement("span")
+                prerelease.className = "text-warning ml-2"
+                prerelease.textContent = "(Pre-release)"
+                title.appendChild(prerelease)
+            }
 
             const dateSmall = document.createElement("small")
             dateSmall.className = "text-muted"
@@ -67,7 +80,7 @@ const showReleaseNotesModal = ({ modals, releases, githubUrl }: ReleaseNotesModa
             if (release.body) {
                 const bodyDiv = document.createElement("div")
                 bodyDiv.className = "mt-2"
-                bodyDiv.innerHTML = getTruncatedBody(release.body)
+                bodyDiv.innerHTML = getTruncatedReleaseBody(release.body)
                 releaseDiv.appendChild(bodyDiv)
             }
 
@@ -83,20 +96,8 @@ const showReleaseNotesModal = ({ modals, releases, githubUrl }: ReleaseNotesModa
     const openGitHub = (e?: Event) => {
         if (e) e.stopPropagation()
         useUiContextFn.haptic()
-        const modalIndex = modals.getModalIndex("release-notes")
-        if (modalIndex !== -1) {
-            modals.removeModal(modalIndex)
-        }
+        modals.removeModalById("release-notes");
         (window as any).open(githubUrl, "_blank")
-    }
-
-    const closeModal = (e?: Event) => {
-        if (e) e.stopPropagation()
-        useUiContextFn.haptic()
-        const modalIndex = modals.getModalIndex("release-notes")
-        if (modalIndex !== -1) {
-            modals.removeModal(modalIndex)
-        }
     }
 
     const formatDate = (dateString: string): string => {
@@ -106,71 +107,6 @@ const showReleaseNotesModal = ({ modals, releases, githubUrl }: ReleaseNotesModa
             month: "long",
             day: "numeric",
         })
-    }
-
-    // Simple markdown to HTML converter for common patterns
-    const markdownToHtml = (markdown: string): string => {
-        let html = markdown
-
-        // Code blocks ```code``` - protect these first
-        const codeBlocks: string[] = []
-        html = html.replace(/```([^`]+)```/g, (match, code) => {
-            codeBlocks.push(code)
-            return `\x00CODEBLOCK${codeBlocks.length - 1}\x00`
-        })
-
-        // Inline code `code`
-        const inlineCodes: string[] = []
-        html = html.replace(/`([^`]+)`/g, (match, code) => {
-            inlineCodes.push(code)
-            return `\x00INLINECODE${inlineCodes.length - 1}\x00`
-        })
-
-        // Headers (##, ###, etc)
-        html = html.replace(/^### (.*$)/gim, "<h6>$1</h6>")
-        html = html.replace(/^## (.*$)/gim, "<h5>$1</h5>")
-        html = html.replace(/^# (.*$)/gim, "<h4>$1</h4>")
-
-        // Bold (**text** or __text__)
-        html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-        html = html.replace(/__(.+?)__/g, "<strong>$1</strong>")
-
-        // Italic (*text* or _text_) - but avoid conflicts with bold and don't match across lines
-        html = html.replace(/(?<!\*)\*([^\*\n]+?)\*(?!\*)/g, "<em>$1</em>")
-        html = html.replace(/(?<!<strong>)_([^_\n]+?)_(?!<\/strong>)/g, "<em>$1</em>")
-
-        // Links [text](url)
-        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
-
-        // Unordered lists (lines starting with *, -, or +) - BEFORE line breaks
-        html = html.replace(/^\s*[\*\-\+] (.+)$/gim, "<li>$1</li>")
-
-        // Wrap consecutive <li> in <ul>
-        html = html.replace(/(<li>.*?<\/li>\n?)+/gs, (match) => {
-            return "<ul>" + match.replace(/\n/g, "") + "</ul>"
-        })
-
-        // Line breaks (but not inside pre/code/ul/li)
-        html = html.replace(/\n(?!<\/?(pre|code|ul|li|h[4-6]))/g, "<br>")
-
-        // Restore code blocks
-        codeBlocks.forEach((code, index) => {
-            html = html.replace(`\x00CODEBLOCK${index}\x00`, `<pre><code>${code}</code></pre>`)
-        })
-
-        // Restore inline code
-        inlineCodes.forEach((code, index) => {
-            html = html.replace(`\x00INLINECODE${index}\x00`, `<code>${code}</code>`)
-        })
-
-        return html
-    }
-
-    // Truncate release body to first few lines for preview
-    const getTruncatedBody = (body: string): string => {
-        const lines = body.split("\n").filter((line) => line.trim() !== "")
-        const truncated = lines.slice(0, 10).join("\n")
-        return markdownToHtml(truncated)
     }
 
     const filteredReleases = getFilteredReleases()
@@ -224,7 +160,7 @@ const showReleaseNotesModal = ({ modals, releases, githubUrl }: ReleaseNotesModa
                                 {release.body && (
                                     <div
                                         class="mt-2"
-                                        dangerouslySetInnerHTML={{ __html: getTruncatedBody(release.body) }}
+                                        dangerouslySetInnerHTML={{ __html: getTruncatedReleaseBody(release.body) }}
                                     />
                                 )}
                                 {index < filteredReleases.length - 1 && <hr />}

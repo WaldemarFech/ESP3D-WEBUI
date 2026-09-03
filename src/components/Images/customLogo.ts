@@ -192,16 +192,32 @@ const safeFallback = (
     fallback: unknown,
     hardFallback: string,
     validator: (candidate: unknown) => string | null
-): string => validator(value) ?? validator(fallback) ?? hardFallback
+): string => {
+    const v = validator(value)
+    if (v !== null) return v
+    const f = validator(fallback)
+    if (f !== null) return f
+    const h = validator(hardFallback)
+    if (h !== null) return h
+    return hardFallback
+}
 
 const sanitizeLogoPresentation = (
     values: Partial<LogoPresentation>,
     fallback: LogoPresentation = HARD_DEFAULT_PRESENTATION
-): LogoPresentation => ({
-    height: safeFallback(values.height, fallback.height, HARD_DEFAULT_PRESENTATION.height, safeLength),
-    color: safeFallback(values.color, fallback.color, HARD_DEFAULT_PRESENTATION.color, safePaint),
-    bgcolor: safeFallback(values.bgcolor, fallback.bgcolor, HARD_DEFAULT_PRESENTATION.bgcolor, safePaint),
-})
+): LogoPresentation => {
+    const vHeight = typeof values.height === "string" ? values.height.trim() : undefined
+    const vColor = typeof values.color === "string" ? values.color.trim() : undefined
+    const vBg = typeof values.bgcolor === "string" ? values.bgcolor.trim() : undefined
+    const fHeight = (typeof fallback.height === "string" ? fallback.height.trim() : undefined) || HARD_DEFAULT_PRESENTATION.height
+    const fColor = (typeof fallback.color === "string" ? fallback.color.trim() : undefined) || HARD_DEFAULT_PRESENTATION.color
+    const fBg = (typeof fallback.bgcolor === "string" ? fallback.bgcolor.trim() : undefined) || HARD_DEFAULT_PRESENTATION.bgcolor
+    return {
+        height: safeLength(vHeight) !== null ? vHeight! : safeLength(fHeight) !== null ? fHeight : HARD_DEFAULT_PRESENTATION.height,
+        color: safePaint(vColor) !== null ? vColor! : safePaint(fColor) !== null ? fColor : HARD_DEFAULT_PRESENTATION.color,
+        bgcolor: safePaint(vBg) !== null ? vBg! : safePaint(fBg) !== null ? fBg : HARD_DEFAULT_PRESENTATION.bgcolor,
+    }
+}
 
 const parseStartTag = (source: string, start: number): ParsedStartTag | null => {
     let index = start + 1

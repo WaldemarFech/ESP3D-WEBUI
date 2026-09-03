@@ -19,7 +19,7 @@ ScanPacksList.js - ESP3D WebUI component file
 import { Fragment } from "preact"
 import { useState, useEffect } from "preact/hooks"
 import { ButtonImg, Loading } from "./../Controls"
-import { useHttpQueue } from "../../hooks"
+import { addHttpFailureToast, useHttpQueue } from "../../hooks"
 import { espHttpURL, positionPortalTooltip } from "../../components/Helpers"
 import {
     useUiContextFn,
@@ -35,6 +35,8 @@ interface ScanPacksListProps {
     setValue: (val: string) => void
     refreshfn: (fn: () => void) => void
 }
+
+import type { HttpFailure } from "../../types/http.types"
 
 interface PackFileEntry { name: string }
 
@@ -63,9 +65,9 @@ const ScanPacksList = ({ id, setValue, refreshfn }: ScanPacksListProps) => {
                     const listFiles = JSON.parse(result)
                     setPacksList(listFiles.files as PackFileEntry[])
                 },
-                onFail: (error: string) => {
+                onFail: (error: HttpFailure) => {
                     setIsLoading(false)
-                    toasts.addToast({ content: error, type: "error" })
+                    addHttpFailureToast(toasts, error)
                     setPacksList([])
                 },
             }
@@ -110,9 +112,7 @@ const ScanPacksList = ({ id, setValue, refreshfn }: ScanPacksListProps) => {
                                     onClick={() => {
                                         useUiContextFn.haptic()
                                         setValue("default")
-                                        modals.removeModal(
-                                            modals.getModalIndex(id)
-                                        )
+                                        modals.removeModalById(id)
                                     }}
                                 />
                             </td>
@@ -162,9 +162,7 @@ const ScanPacksList = ({ id, setValue, refreshfn }: ScanPacksListProps) => {
                                                             ""
                                                         )
                                                     )
-                                                    modals.removeModal(
-                                                        modals.getModalIndex(id)
-                                                    )
+                                                    modals.removeModalById(id)
                                                 }}
                                             />
                                         </td>

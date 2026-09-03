@@ -19,10 +19,11 @@ ScanAp.tsx - ESP3D WebUI component file
 import { Fragment,  FunctionalComponent } from "preact"
 import { useState, useEffect } from "preact/hooks"
 import { ButtonImg, Loading } from "./../Controls"
-import { useTargetCommands } from "../../hooks"
+import { addHttpFailureToast, useTargetCommands } from "../../hooks"
 import { useUiContextFn, useModalsContext, useToastsContext } from "../../contexts"
 import { T } from "./../Translations"
 import { Lock, CheckCircle } from "preact-feather"
+import type { HttpFailure } from "../../types/http.types"
 
 interface AccessPoint {
     SSID: string
@@ -59,9 +60,9 @@ const ScanApList: FunctionalComponent<ScanApListProps> = ({ id, setValue, refres
                 setApList(jsonResult.data)
 }
             },
-            onFail: (error: string) => {
+            onFail: (error: HttpFailure) => {
                 setIsLoading(false)
-                toasts.addToast({ content: error, type: "error" })
+                addHttpFailureToast(toasts, error)
                 setApList([])
             },
         }
@@ -104,9 +105,7 @@ const ScanApList: FunctionalComponent<ScanApListProps> = ({ id, setValue, refres
                                             onClick={() => {
                                                 useUiContextFn.haptic()
                                                 setValue(SSID)
-                                                modals.removeModal(
-                                                    modals.getModalIndex(id)
-                                                )
+                                                modals.removeModalById(id)
                                             }}
                                         />
                                     </td>

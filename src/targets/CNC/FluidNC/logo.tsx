@@ -21,6 +21,7 @@
 
 import { FunctionalComponent } from "preact"
 import { useSettingsContext } from "../../../contexts/SettingsContext"
+import { sanitizeCustomLogo, sanitizeLogoPresentation, LogoPresentation } from "../../../components/Images/customLogo"
 
 interface LogoProps {
   height?: string
@@ -38,21 +39,23 @@ const AppLogo: FunctionalComponent<LogoProps> = ({
   bgcolor = "white",
 }) => {
   const { interfaceSettings } = useSettingsContext() as any
-  if (
-    interfaceSettings.current &&
-    interfaceSettings.custom &&
-    interfaceSettings.custom.logo
-  )
-    return (
-      <span
-        dangerouslySetInnerHTML={{
-          __html: interfaceSettings.custom.logo
-            .replace("{height}", height)
-            .replaceAll("{color}", color)
-            .replaceAll("{bgcolor}", bgcolor),
-        }}
-      ></span>
-    )
+  const customLogo = interfaceSettings?.current?.custom?.logo
+  if (customLogo) {
+    const presentation: LogoPresentation = sanitizeLogoPresentation({
+      height,
+      color,
+      bgcolor,
+    })
+    const sanitized = sanitizeCustomLogo(customLogo, presentation)
+    if (sanitized) {
+      return (
+        <span
+          dangerouslySetInnerHTML={{ __html: sanitized }}
+          style={{ pointerEvents: "none", overflow: "hidden" }}
+        ></span>
+      )
+    }
+  }
   else
     return (
       <svg

@@ -19,6 +19,7 @@ import { TargetedMouseEvent } from "preact"
 import { HelpCircle } from "preact-feather"
 import { useUiContextFn, useModalsContext } from "../../contexts"
 import { useHttpQueue } from "../../hooks"
+import type { HttpFailure } from "../../types/http.types"
 import { T } from "../../components/Translations"
 import { espHttpURL } from "../../components/Helpers"
 
@@ -39,16 +40,16 @@ const showKeepConnected = (): void => {
                 onSuccess: (result: string): void => {
                     //TODO:Need to do something ? TBD
                 },
-                onFail: (error: string): void => {
+                onFail: (_error: HttpFailure): void => {
                     //TODO:Need to do something ? TBD
                 },
             }
         )
-        modals.removeModal(modals.getModalIndex(id))
+        modals.removeModalById(id)
     }
     const clickCancel = (e: TargetedMouseEvent<HTMLButtonElement>): void => {
         useUiContextFn.haptic()
-        modals.removeModal(modals.getModalIndex(id))
+        modals.removeModalById(id)
     }
     if (modals.getModalIndex(id) == -1)
         modals.addModal({

@@ -19,6 +19,8 @@
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
+import { HttpFailure } from "../types/http.types"
+
 // Type definitions
 interface HttpAdapterParams {
     method?: string
@@ -26,10 +28,6 @@ interface HttpAdapterParams {
     body?: string | FormData | null
     id?: string | null
     [key: string]: any
-}
-
-interface HttpError extends Error {
-    code?: number
 }
 
 interface HttpAdapterReturn {
@@ -101,35 +99,35 @@ const httpAdapter = (
         xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response)
             else {
-                const e: HttpError = new Error(
+                reject(new HttpFailure(
                     `${xhr.status ? xhr.status : ""}${
                         xhr.statusText ? ` - ${xhr.statusText}` : ""
-                    }`
-                )
-                e.code = xhr.status
-                reject(e)
+                    }`,
+                    { code: xhr.status, kind: "http" }
+                ))
             }
         }
         xhr.onerror = () => {
-            const e: HttpError = new Error(
+            reject(new HttpFailure(
                 `${xhr.status ? xhr.status : "Connection time out"}${
                     xhr.status && xhr.statusText ? ` - ${xhr.statusText}` : ""
-                }`
-            )
-            e.code = xhr.status
-            reject(e)
+                }`,
+                { code: xhr.status, kind: "network" }
+            ))
         }
 
         xhr.ontimeout = () => {
-            const e: HttpError = new Error("408 - Request timeout")
-            e.code = 408
-            reject(e)
+            reject(new HttpFailure("408 - Request timeout", {
+                code: 408,
+                kind: "network",
+            }))
         }
 
         xhr.onabort = () => {
-            const e: HttpError = new Error("Request aborted")
-            e.code = 499
-            reject(e)
+            reject(new HttpFailure("Request aborted", {
+                code: 499,
+                kind: "cancelled",
+            }))
         }
     })
 
@@ -150,4 +148,5 @@ const httpAdapter = (
 }
 
 export { httpAdapter }
-export type { HttpAdapterParams, HttpAdapterReturn, HttpError }
+export type { HttpAdapterParams, HttpAdapterReturn }
+export type { HttpFailure, HttpFailureKind } from "../types/http.types"

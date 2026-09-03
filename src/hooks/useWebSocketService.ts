@@ -1,109 +1,85 @@
-import { useEffect, useRef } from "preact/hooks";
-import { WebSocketService } from "../Services/WebSocketService";
-import { WebSocketAdapter } from "../Services/WebSocketAdapter";
-import { useUiContext, useToastsContext, useModalsContext, useHttpQueueContext, useSettingsContext } from "../contexts";
-import { useTargetContext } from "../targets";
-import { dispatchToExtensions } from "../components/Helpers";
-import { ingestConnectionState } from "../targets/CNC/FluidNC/eventMacros";
+import { useEffect, useState } from "preact/hooks"
+import { WebSocketService } from "../Services/WebSocketService"
+import { WebSocketAdapter } from "../Services/WebSocketAdapter"
+import { useUiContext, useToastsContext, useModalsContext, useSettingsContext } from "../contexts"
+import { useTargetContext } from "../targets"
+import { dispatchToExtensions } from "../components/Helpers"
+import { ingestConnectionState } from "../targets/CNC/FluidNC/eventMacros"
+import { buildWebSocketUrl } from "../Services/WebSocketUrl"
 
-let webSocketServiceInstance : WebSocketService | undefined;
+let webSocketServiceInstance: WebSocketService | undefined
 
 /**
- * Hook to get or create the WebSocketService instance
- * Handles all integrations with app contexts
+ * Returns the persistent WebSocket service once its lifecycle owner has created it.
+ * The first render is intentionally allowed to return undefined: constructing the
+ * adapter also constructs the native WebSocket transport, so creation belongs in
+ * an effect rather than render.
  */
-export function useWebSocketService() : WebSocketService {
-    const { connection, dialogs, uisettings } = useUiContext();
-    const { toasts } = useToastsContext();
-    const { modals } = useModalsContext();
-    const { processData } = useTargetContext();
-    const { removeAllRequests } = useHttpQueueContext();
-    const { connectionSettings, activity } = useSettingsContext();
+export function useWebSocketService(): WebSocketService | undefined {
+    const { connection, dialogs, uisettings, ui } = useUiContext()
+    const { toasts } = useToastsContext()
+    const { modals } = useModalsContext()
+    const { processData } = useTargetContext()
+    const { connectionSettings, activity } = useSettingsContext()
+    const [service, setService] = useState<WebSocketService | undefined>(() => webSocketServiceInstance)
+    const configuredPort = connectionSettings.current?.WebSocketPort
+    const settingsReady = ui.ready
 
-    const serviceRef = useRef<WebSocketService | undefined>();
     useEffect(() => {
-        // Create service instance once on mount
-        // Only create if we have the WebSocketPort configured
         if (!webSocketServiceInstance) {
-            const port = connectionSettings.current?.WebSocketPort;
-            if (!port) {
-                console.warn("WebSocketPort not configured in connection settings");
-                return;
-            }
-
-            // Construct WebSocket URL from current location
-            const address = document.location.hostname;
-            const path =
-                connectionSettings.current.WebCommunication === "Synchronous"
-                    ? ""
-                    : "/ws"
-            const wsPort = document.location.port != ""
-                    ? parseInt(document.location.port) + 2
-                    : port
-            const wsUrl = `ws://${address}:${wsPort}${path}`;
-
-            const wsAdapter = new WebSocketAdapter(wsUrl);
-            webSocketServiceInstance = new WebSocketService(wsAdapter);
-
-            // Set up service context for dependency injection
-            // This allows the service to access app-level contexts (connectionSettings, dialogs, activity, modals, extensions, uiSettings)
-            webSocketServiceInstance.setServiceContext({
-                dialogs,
-                activity,
-                modalsCleared: () => modals.clearModals(),
-                extensionsNotify: (type, data, targetId) => dispatchToExtensions(type, data, targetId),
-                uiSettings: uisettings,
-            });
-
-            // Set up notification handler
-            webSocketServiceInstance.setNotificationHandler({
-                addToast: (toast) => toasts.addToast(toast),
-                clearModals: () => modals.clearModals(),
-            });
-
-            // Set up connection state listener
-            webSocketServiceInstance.setConnectionStateListener((state) => {
-                connection.setConnectionState(state);
-                ingestConnectionState(state.connected);
-            });
-
-            // Set up data routing
-            webSocketServiceInstance.addDataListener((type, data) => {
-                processData(type, data);
-            });
-
-            // Set up ping listener for session timeout warning
-            webSocketServiceInstance.addPingListener((timeRemaining, maxTime) => {
-                if (timeRemaining < 30000 && timeRemaining > 0) {
-                    dialogs.setShowKeepConnected(true);
-                }
-            });
-
-            // Set up session timeout listener
-            webSocketServiceInstance.setSessionTimeoutListener(() => {
-                dialogs.setShowKeepConnected(false);
-            });
-
-            // Set up error handler to abort HTTP requests on controller errors
-            webSocketServiceInstance.setErrorHandler((errorCode, errorMessage) => {
-                removeAllRequests();
-            });
+            if (!settingsReady || !configuredPort) return
+            const wsUrl = buildWebSocketUrl(document.location, {
+                ...connectionSettings.current,
+                WebSocketPort: configuredPort,
+            })
+            webSocketServiceInstance = new WebSocketService(new WebSocketAdapter(wsUrl))
         }
 
-        serviceRef.current = webSocketServiceInstance;
-        return () => {
-            // Don't disconnect on unmount - service should persist
-        };
-    }, [connection, dialogs, toasts, modals, processData, removeAllRequests, connectionSettings, activity, uisettings]);
+        const currentService = webSocketServiceInstance
 
-    // Return the service instance (will be undefined if not yet initialized)
-    return serviceRef.current!;
+        // Refresh context-owned callbacks on every provider update. The
+        // transport singleton persists, but these closures must not remain
+        // bound to whichever render happened to create it first.
+        currentService.setServiceContext({
+            dialogs,
+            activity,
+            modalsCleared: () => modals.clearModals(),
+            extensionsNotify: (type, data, targetId) => dispatchToExtensions(type, data, targetId),
+            uiSettings: uisettings,
+            connectionSettings,
+        })
+        currentService.setNotificationHandler({
+            addToast: (toast) => toasts.addToast(toast),
+            clearModals: () => modals.clearModals(),
+        })
+        currentService.setConnectionStateListener((state) => {
+            connection.setConnectionState(state)
+            ingestConnectionState(state.connected)
+        })
+        currentService.setPingListener((timeRemaining) => {
+            if (timeRemaining < 30000 && timeRemaining > 0) dialogs.setShowKeepConnected(true)
+        })
+        currentService.setSessionTimeoutListener(() => dialogs.setShowKeepConnected(false))
+        currentService.setErrorHandler(undefined)
+        currentService.setDataListener(processData)
+        setService(currentService)
+    }, [
+        settingsReady,
+        configuredPort,
+        connection,
+        dialogs,
+        toasts,
+        modals,
+        processData,
+        connectionSettings,
+        activity,
+        uisettings,
+    ])
+
+    return service
 }
 
-/**
- * Gets the global WebSocketService instance
- * Use this when you need the service outside of hooks
- */
+/** Gets the service after its lifecycle owner has created it. */
 export function getWebSocketService(): WebSocketService | undefined {
-    return webSocketServiceInstance;
+    return webSocketServiceInstance
 }

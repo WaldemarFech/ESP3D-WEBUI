@@ -19,6 +19,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 import type { ComponentChildren } from "preact"
+import type { ModalInput, ModalInstanceId } from "../contexts/ModalsContext"
 
 /**
  * Modal manager interface for adding/removing modals.
@@ -29,8 +30,12 @@ export interface ModalManager {
     getModalIndex: (id: string) => number
     /** Remove modal at given index */
     removeModal: (index: number) => void
-    /** Add a new modal to the stack */
-    addModal: (modal: any) => void
+    /** Remove the modal currently using a stable semantic ID */
+    removeModalById: (id: string) => void
+    /** Remove only the concrete modal instance that owns this opaque ID */
+    removeModalByInstanceId: (instanceId: ModalInstanceId) => void
+    /** Add a modal and return its opaque instance ID, or undefined when its semantic ID is already open */
+    addModal: (modal: ModalInput) => ModalInstanceId | undefined
 }
 
 /**

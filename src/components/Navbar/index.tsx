@@ -32,7 +32,8 @@ import {
     useRouterContext,
     useUiContextFn,
 } from "../../contexts"
-import { useWebSocketService } from "../../hooks/useWebSocketService";
+import { useWebSocketService } from "../../hooks/useWebSocketService"
+import type { HttpFailure } from "../../types/http.types";
 import { useHttpQueue } from "../../hooks"
 import { espHttpURL } from "../Helpers"
 import { showConfirmationModal } from "../Modal"
@@ -119,10 +120,10 @@ const Navbar = () => {
             { method: "POST", id: "login", body: formData },
             {
                 onSuccess: (_result: string) => {
-                    webSocketService.disconnect("sessiontimeout")
+                    webSocketService?.disconnect("sessiontimeout")
                 },
-                onFail: (_error: string) => {
-                    webSocketService.disconnect("sessiontimeout")
+                onFail: (_error: HttpFailure) => {
+                    webSocketService?.disconnect("sessiontimeout")
                 },
             }
         )

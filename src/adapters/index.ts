@@ -23,4 +23,9 @@ import { httpAdapter } from "./httpAdapter"
 export { httpAdapter }
 
 // Re-export types
-export type { HttpAdapterParams, HttpAdapterReturn } from "./httpAdapter"
+export type {
+    HttpAdapterParams,
+    HttpAdapterReturn,
+    HttpFailure,
+    HttpFailureKind,
+} from "./httpAdapter"

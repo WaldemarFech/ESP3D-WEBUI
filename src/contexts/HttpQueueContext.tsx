@@ -20,24 +20,15 @@ import { createContext, FunctionalComponent } from "preact"
 import { useContext, useRef } from "preact/hooks"
 import { httpAdapter } from "../adapters"
 import { useUiContext } from "./UiContext"
-import { getWebSocketService } from "../hooks/useWebSocketService";
+import { getWebSocketService } from "../hooks/useWebSocketService"
 import { useTargetContext } from "../targets"
-
-// Type definitions
-interface HttpRequest {
-    id: string
-    url: string
-    params: any
-    onSuccess: (response: any) => void
-    onFail?: ((error: string) => void) | null
-    onProgress?: (percent: number) => void
-}
+import { HttpQueueController } from "./HttpQueueController"
+import type { HttpRequest } from "./HttpQueueController"
 
 interface HttpQueueContextValue {
     addInQueue: (request: HttpRequest) => boolean
     addInTopQueue: (request: HttpRequest) => void
-    removeRequests: (requestIds: string | string[]) => void
-    getCurrentRequest: () => any
+    cancelRequests: (requestIds: string | string[]) => void
     removeAllRequests: () => void
     processRequests: () => void
 }
@@ -46,13 +37,6 @@ interface HttpQueueContextProviderProps {
     children: any
 }
 
-let counterNoAnswer = 0
-const MaxNoAnswerNb = 4
-
-/*
- * Local const
- *
- */
 const HttpQueueContext = createContext<HttpQueueContextValue | undefined>(undefined)
 const useHttpQueueContext = (): HttpQueueContextValue => {
     const context = useContext(HttpQueueContext)
@@ -61,10 +45,9 @@ const useHttpQueueContext = (): HttpQueueContextValue => {
         return {
             addInQueue: () => false,
             addInTopQueue: () => {},
-            removeRequests: () => {},
-            getCurrentRequest: () => null,
+            cancelRequests: () => {},
             removeAllRequests: () => {},
-            processRequests: () => {}
+            processRequests: () => {},
         }
     }
     return context
@@ -72,129 +55,32 @@ const useHttpQueueContext = (): HttpQueueContextValue => {
 
 const HttpQueueContextProvider: FunctionalComponent<HttpQueueContextProviderProps> = ({ children }) => {
     const { processData } = useTargetContext()
-    const requestQueue = useRef<HttpRequest[]>([]) // Http queue for every components
-    const isBusy = useRef<boolean>(false)
-    const currentRequest = useRef<any>()
     const { connection } = useUiContext()
+    const processDataRef = useRef(processData)
+    const connectionRef = useRef(connection)
+    processDataRef.current = processData
+    connectionRef.current = connection
 
-    //Add new Request to queue.  `max` is enforced by the shared provider so it
-    // also covers component unmount/remount while an older request remains active.
-    const addInQueue = (newRequest: HttpRequest): boolean => {
-        if (newRequest.params.max != undefined) {
-            const sameIdCount = requestQueue.current.reduce(
-                (total, request) => total + (request.id == newRequest.id ? 1 : 0),
-                0
-            )
-            if (sameIdCount >= newRequest.params.max) return false
-        }
-
-        requestQueue.current = [...requestQueue.current, newRequest]
-        if (!isBusy.current) executeHttpCall()
-        return true
+    const controllerRef = useRef<HttpQueueController>()
+    if (!controllerRef.current) {
+        controllerRef.current = new HttpQueueController({
+            httpAdapter,
+            processData: (type, data) => processDataRef.current(type, data),
+            getConnectionState: () => connectionRef.current.connectionState,
+            setConnectionState: (state) => connectionRef.current.setConnectionState(state),
+            getWebSocketService,
+        })
     }
-
-    //Add new Request to top of queue
-    const addInTopQueue = (newRequest: HttpRequest) => {
-        requestQueue.current = [newRequest, ...requestQueue.current]
-        if (!isBusy.current) executeHttpCall()
-    }
-
-    //Remove finished request from queue
-    const removeRequestDone = () => {
-        requestQueue.current = [...requestQueue.current].slice(1)
-        currentRequest.current = null
-    }
-
-    //Remove finished request from queue
-    const removeRequests = (requestIds: string | string[]) => {
-        const idsArray = Array.isArray(requestIds) ? requestIds : [requestIds]
-        const updatedRequestQueue = [...requestQueue.current].filter(
-            ({ id }) => {
-                return !idsArray.includes(id)
-            }
-        )
-        requestQueue.current = updatedRequestQueue
-    }
-
-    //Get current active request in queue
-    const getCurrentRequest = () => {
-        return currentRequest.current
-    }
-
-    //Remove all request from queue
-    const removeAllRequests = () => {
-        if (currentRequest.current) currentRequest.current.abort()
-        requestQueue.current = []
-        currentRequest.current = null
-    }
-
-    //Process requests from queue
-    const processRequests = () => {
-        executeHttpCall()
-    }
-
-    //Process query in queue
-    const executeHttpCall = async () => {
-        if (!isBusy.current) isBusy.current = true
-        const { url, params, onSuccess, onFail, onProgress } =
-            requestQueue.current[0]
-        let is401Error = false
-        try {
-            currentRequest.current = httpAdapter(url, params, onProgress || ((percent: number) => {     }))
-            if (params.echo) {
-                processData("echo", params.echo)
-            }
-            const response = await currentRequest.current.response
-            onSuccess(response)
-            counterNoAnswer = 0
-        } catch (e: any) {
-            if (e.code == 401) {
-                is401Error = true
-                connection.setConnectionState({
-                    connected: connection.connectionState.connected,
-                    page: "notauthenticated",
-                })
-            } else if (e.code == 499) {
-                //just do not raise error screen
-            } else {
-                if (!e.code) {
-                    counterNoAnswer++
-                    console.log("Connection lost ?", counterNoAnswer)
-                    if (counterNoAnswer > MaxNoAnswerNb) {
-                        const ws = getWebSocketService()
-                        if (ws) {
-                            ws.disconnect("connectionlost")
-                        }
-                    }
-                }
-            }
-            if (onFail) {
-                onFail(e.message) //to-check
-            }
-        } finally {
-            //check if need to remove or not
-            if (!is401Error) {
-                removeRequestDone()
-                if (requestQueue.current.length > 0) {
-                    executeHttpCall()
-                } else {
-                    isBusy.current = false
-                }
-            } else {
-                currentRequest.current = null
-            }
-        }
-    }
+    const controller = controllerRef.current
 
     return (
         <HttpQueueContext.Provider
             value={{
-                addInQueue,
-                addInTopQueue,
-                removeRequests,
-                getCurrentRequest,
-                removeAllRequests,
-                processRequests,
+                addInQueue: (request) => controller.addInQueue(request),
+                addInTopQueue: (request) => controller.addInTopQueue(request),
+                cancelRequests: (requestIds) => controller.cancelRequests(requestIds),
+                removeAllRequests: () => controller.removeAllRequests(),
+                processRequests: () => controller.processRequests(),
             }}
         >
             {children}

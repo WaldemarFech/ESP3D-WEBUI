@@ -24,14 +24,16 @@ import { useHttpFn } from "./useHttpQueue"
 import { variablesList, processor, useTargetContext } from "../targets"
 import { useToastsContext } from "../contexts/ToastsContext"
 import { getWebSocketService } from "../hooks/useWebSocketService"
+import { addHttpFailureToast } from "./httpFailure"
+import type { HttpFailure } from "../types/http.types"
 
 const useTargetCommands = () => {
     const [isLoading, setIsLoading] = useState(false)
     const { createNewRequest } = useHttpFn
     const { toasts } = useToastsContext()
 
-    const failToast = (error: string) => {
-        toasts.addToast({ content: error, type: "error" })
+    const failToast = (error: HttpFailure) => {
+        addHttpFailureToast(toasts, error)
         console.log(error)
     }
 
@@ -57,7 +59,7 @@ const useTargetCommands = () => {
     // Prior to sending each individual command, its string is processed with
     // "replaceVariables" to modify the command in a target-dependent manner
 
-    const targetCommands = (commands: (string | (()=> string[]) | (string | (() => string))[]), delimiter?: (string | null | undefined | number), methodID?: { id?: string, max?: number, echo?: boolean, timeoutMs?: number}, callbacks?: { onSuccess?: (result: string) => void, onFail?: (error: string) => void}): boolean => {
+    const targetCommands = (commands: (string | (()=> string[]) | (string | (() => string))[]), delimiter?: (string | null | undefined | number), methodID?: { id?: string, max?: number, echo?: boolean, timeoutMs?: number}, callbacks?: { onSuccess?: (result: string) => void, onFail?: (error: HttpFailure) => void}): boolean => {
         if (typeof commands === "function") {
             commands = commands();
         }
@@ -95,10 +97,7 @@ const useTargetCommands = () => {
                 // The default success action is to do nothing
                 onSuccess: (result) => {},
                 // The default failure action is to create a toast with the error message
-                onFail: (error) => {
-                    toasts.addToast({ content: error, type: "error" })
-                    console.log(error)
-                }
+                onFail: failToast
             }
         }
 
@@ -147,10 +146,10 @@ const useTargetCommands = () => {
                 //Result is handled on ws so just do nothing
                 if (updateUI) updateUI(result)
             },
-            onFail: (error: string) => {
+            onFail: (error: HttpFailure) => {
                 console.log("Error:", error)
                 setIsLoading(false)
-                toasts.addToast({ content: error, type: "error" })
+                addHttpFailureToast(toasts, error)
                 processor.stopCatchResponse()
             },
         }

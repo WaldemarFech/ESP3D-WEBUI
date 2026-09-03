@@ -46,6 +46,8 @@ import {
 } from "../tabs/interface/importHelper"
 import { Frown, Info } from "preact-feather"
 import { showModal } from "../components/Modal"
+import { addHttpFailureToast, getHttpFailureMessage } from "./httpFailure"
+import type { HttpFailure } from "../types/http.types"
 
 /*
  * Local const
@@ -256,13 +258,13 @@ const useSettings = (): UseSettingsReturn => {
                 }
                 if (next) next()
             },
-            onFail: (error: string) => {
-                if (!error.startsWith("401")) {
+            onFail: (error: HttpFailure) => {
+                if (error.code !== 401) {
                     connection.setConnectionState({
                         connected: false,
                         page: "error",
                     })
-                    toasts.addToast({ content: error, type: "error" })
+                    addHttpFailureToast(toasts, error)
                     console.log("Error")
                 }
             },
@@ -320,7 +322,7 @@ const useSettings = (): UseSettingsReturn => {
                             }
                             finalizeDisplay()
                         },
-                        onFail: (error: string) => {
+                        onFail: (error: HttpFailure) => {
                             if (next) next()
                             if (setLoading) {
                                 setLoading(false)
@@ -328,7 +330,7 @@ const useSettings = (): UseSettingsReturn => {
                             finalizeDisplay()
                             console.log("error")
                             toasts.addToast({
-                                content: `${error  } ${  themepack}`,
+                                content: `${getHttpFailureMessage(error)} ${themepack}`,
                                 type: "error",
                             })
                         },
@@ -426,11 +428,11 @@ const useSettings = (): UseSettingsReturn => {
                                     setCurrentLanguage(langjson)
                                     loadTheme(themepack)
                                 },
-                                onFail: (error: string) => {
+                                onFail: (error: HttpFailure) => {
                                     loadTheme(themepack)
                                     console.log("Error")
                                     toasts.addToast({
-                                        content: `${error  } ${  languagepack}`,
+                                        content: `${getHttpFailureMessage(error)} ${languagepack}`,
                                         type: "error",
                                     })
                                 },
@@ -440,7 +442,7 @@ const useSettings = (): UseSettingsReturn => {
                         loadTheme(themepack)
                     }
                 },
-                onFail: (error: string) => {
+                onFail: (error: HttpFailure) => {
                     const preferences = defaultPreferences
                     formatPreferences(preferences.settings)
                     uisettings.set(
@@ -451,9 +453,9 @@ const useSettings = (): UseSettingsReturn => {
                     if (setLoading) {
                         setLoading(false)
                     }
-                    if (error != "404 - Not Found")
+                    if (error.message != "404 - Not Found")
                         toasts.addToast({
-                            content: `${error  } preferences.json`,
+                            content: `${getHttpFailureMessage(error)} preferences.json`,
                             type: "error",
                         })
                     console.log("No valid preferences.json")

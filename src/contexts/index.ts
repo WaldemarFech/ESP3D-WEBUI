@@ -59,4 +59,4 @@ export type { UiContextValue, UiContextFn, UiSettings, Panel, ConnectionState, S
 export type { SettingsContextValue, SettingsContextFn } from "./SettingsContext"
 export type { DatasContextValue, Terminal, TerminalElement } from "./DatasContext"
 export type { ToastsContextValue, ToastsContextFn, Toast, Notification, ToastContent } from "./ToastsContext"
-export type { ModalsContextValue, Modal } from "./ModalsContext"
+export type { ModalsContextValue, Modal, ModalInput, ModalInstanceId } from "./ModalsContext"

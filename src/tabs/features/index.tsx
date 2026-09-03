@@ -20,10 +20,12 @@
 import { Fragment,  TargetedMouseEvent, JSX } from "preact"
 import { useEffect, useState, useRef } from "preact/hooks"
 import { ButtonImg, Loading, Progress } from "../../components/Controls"
-import { useHttpQueue, useTargetCommands } from "../../hooks"
+import { addHttpFailureToast, useHttpQueue, useTargetCommands } from "../../hooks"
 import { espHttpURL } from "../../components/Helpers"
 import { T } from "../../components/Translations"
 import { useWebSocketService } from "../../hooks/useWebSocketService";
+import type { HttpFailure } from "../../types/http.types"
+import type { ModalInstanceId } from "../../contexts/ModalsContext"
 import {
     useUiContext,
     useModalsContext,
@@ -123,33 +125,25 @@ const FeaturesTab = () => {
                     setIsLoading(false)
                 }
             },
-            onFail: (error: string) => {
+            onFail: (error: HttpFailure) => {
                 setIsLoading(false)
                 console.log(error)
-                toasts.addToast({ content: error, type: "error" })
+                addHttpFailureToast(toasts, error)
             },
         }
         targetCommands("[ESP400]json=yes", undefined, { echo: false}, callbacks)
     }
 
     /**
-     * *Aborts the save request and displays an error message.*
-     */
-    function abortSave() {
-        abortRequest("ESP401")
-        toasts.addToast({ content: T("S175"), type: "error" })
-        endProgression(false)
-    }
-
-    /**
-     * * Remove the progression modal from the DOM.
+     * * Remove this save operation's progression modal from the DOM.
      * * Set the `isLoading` flag to `false`.
      * * If the `needrestart` flag is `true`, show a confirmation modal asking the user if they want to
      * restart the board
      * @param needrestart - If true, the board will ask for restart after the progression is finished.
+     * @param progressModalId - Opaque identity of this save operation's modal.
      */
-    function endProgression(needrestart: boolean) {
-        modals.removeModal(modals.getModalIndex("progression"))
+    function endProgression(needrestart: boolean, progressModalId: ModalInstanceId | undefined) {
+        if (progressModalId) modals.removeModalByInstanceId(progressModalId)
         setIsLoading(false)
         if (needrestart) {
             showConfirmationModal({
@@ -168,8 +162,15 @@ const FeaturesTab = () => {
      * @param index - the index of the current entry in the list of entries
      * @param total - the total number of entries to save
      * @param needrestart - If true, the ESP will be restarted after the save.
+     * @param progressModalId - Opaque identity of this save operation's modal.
      */
-    function saveEntry(entry: SettingFieldProps, index: number, total: number, needrestart: boolean) {
+    function saveEntry(
+        entry: SettingFieldProps,
+        index: number,
+        total: number,
+        needrestart: boolean,
+        progressModalId: ModalInstanceId | undefined
+    ) {
         const callbacks = {
             onSuccess: (result: string) => {
                 try {
@@ -208,20 +209,20 @@ const FeaturesTab = () => {
                     toasts.addToast({ content: String(e), type: "error" })
                 } finally {
                     if (index == total - 1) {
-                        endProgression(needrestart)
+                        endProgression(needrestart, progressModalId)
                     }
                 }
             },
-            onFail: (error: string) => {
+            onFail: (error: HttpFailure) => {
                 if (
                     progressBar.update &&
                     typeof progressBar.update === "function"
                 )
                     progressBar.update(index + 1)
                 console.log(error)
-                toasts.addToast({ content: error, type: "error" })
+                addHttpFailureToast(toasts, error)
                 if (index == total - 1) {
-                    endProgression(needrestart)
+                    endProgression(needrestart, progressModalId)
                 }
             },
         }
@@ -259,7 +260,13 @@ const FeaturesTab = () => {
                 })
             })
         })
-        showProgressModal({
+        let progressModalId: ModalInstanceId | undefined
+        const abortSave = (): void => {
+            abortRequest("ESP401")
+            toasts.addToast({ content: T("S175"), type: "error" })
+            endProgression(false, progressModalId)
+        }
+        progressModalId = showProgressModal({
             modals,
             title: T("S91"),
             button1: { cb: abortSave, text: T("S28") },
@@ -271,7 +278,7 @@ const FeaturesTab = () => {
                 const subsection = section[subsectionId]
                 subsection.forEach((entry) => {
                     if (entry.initial != entry.value) {
-                        saveEntry(entry, index, total, needrestart)
+                        saveEntry(entry, index, total, needrestart, progressModalId)
                         index++
                     }
                 })
@@ -303,14 +310,14 @@ const FeaturesTab = () => {
     function reStartBoard() {
         const callbacks = {
             onSuccess: (result: string) => {
-                webSocketService.disconnect("restart")
+                webSocketService?.disconnect("restart")
                 setTimeout(() => {
                     window.location.reload()
                 }, restartdelay * 1000)
             },
-            onFail: (error: string) => {
+            onFail: (error: HttpFailure) => {
                 console.log(error)
-                toasts.addToast({ content: error, type: "error" })
+                addHttpFailureToast(toasts, error)
             },
         }
         targetCommands("[ESP444]RESTART", undefined, undefined, callbacks)

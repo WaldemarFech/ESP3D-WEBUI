@@ -20,7 +20,7 @@
 // this file's own ingestStatus/ingestAlarmFastPath being called from
 // TargetContext.tsx.
 
-import { silentFetch } from "../../../components/Helpers"
+import { silentFetch, isTrustedEventUrl } from "../../../components/Helpers"
 import { useUiContextFn } from "../../../contexts"
 import type { MacroType } from "./macroExecution"
 
@@ -43,6 +43,7 @@ interface Rule {
     macroid: string      // used when actiontype == "macro"
     delay: number
     cooldownms: number
+    urltrusted?: boolean // provenance: true = user-confirmed/trusted; false/undefined = imported/unverified
 }
 
 // ---- macro runner registration: pushed once from ConnectionManager (always
@@ -115,6 +116,7 @@ function readEnabledRules(): Rule[] {
                 enabled: !!flat.enabled,
                 delay: Math.max(0, Number(flat.delay) || 0),
                 cooldownms: Math.max(MIN_COOLDOWN_MS, Number(flat.cooldownms) || 0),
+                urltrusted: flat.urltrusted === true,
             }
         })
         .filter((r) => r.enabled && (r.actiontype === "macro" ? r.macroid.length > 0 : r.action.length > 0))
@@ -157,6 +159,16 @@ function tryFire(rule: Rule): void {
         return
     }
 
+    if (rule.actiontype === "url") {
+        if (!isTrustedEventUrl(rule.action)) {
+            console.error(`[EventMacros] "${rule.id}": rejected untrusted URL action (needs explicit user trust / valid absolute HTTP(S)): ${String(rule.action).slice(0, 200)}`)
+            return
+        }
+        if (rule.urltrusted !== true) {
+            console.log(`[EventMacros] "${rule.id}": URL rule not explicitly trusted (urltrusted=false/undefined) — skipping auto-fire. Confirm trust in settings to enable.`)
+            return
+        }
+    }
     rt.lastFireStart = now
     rt.inFlight = true
     silentFetch(rule.action, {

@@ -78,6 +78,18 @@ export function eventmacroUrlConstraints(actiontype: string | undefined): { min?
     return { min: "1", regexpattern: "^https?://" }
 }
 
+export function isTrustedEventUrlString(value: unknown): boolean {
+    if (typeof value !== "string") return false
+    const trimmed = value.trim()
+    if (!trimmed) return false
+    try {
+        const url = new URL(trimmed)
+        return (url.protocol === "http:" || url.protocol === "https:") && url.username === "" && url.password === ""
+    } catch {
+        return false
+    }
+}
+
 /**
  * Formats an item data object.
  *
@@ -294,6 +306,11 @@ function formatItem(itemData: RawItemData, index: number = -1, origineId: string
                     newItem.append = "S114"
                     newItem.label = "S231"
                     newItem.help = "S235"
+                    break
+                case "urltrusted":
+                    newItem.type = "boolean"
+                    newItem.label = "Trusted webhook (confirm to auto-fire)"
+                    newItem.help = "Only URL rules with this enabled can fire automatically; imported rules start untrusted."
                     break
                 case "enabled":
                     newItem.type = "boolean"
