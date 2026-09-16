@@ -7,5 +7,6 @@
     "macroid": "",
     "delay": "300",
     "cooldownms": "3000",
-    "enabled": true
+    "enabled": true,
+    "urltrusted": false
 }

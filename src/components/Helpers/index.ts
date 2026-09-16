@@ -16,7 +16,7 @@
  License along with This code; if not, write to the Free Software
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-import { espHttpURL, getCookie, isLimitedEnvironment, silentFetch } from "./http"
+import { espHttpURL, getCookie, isLimitedEnvironment, silentFetch, isTrustedEventUrl, safeSilentFetch } from "./http"
 import { getBrowserTime } from "./time"
 import {
     createComponent,
@@ -89,6 +89,8 @@ export {
     BitsArray,
     useStoredState,
     silentFetch,
+    isTrustedEventUrl,
+    safeSilentFetch,
     positionPortalTooltip,
 }
 

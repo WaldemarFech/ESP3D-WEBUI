@@ -562,6 +562,13 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                                 ) {
                                     return
                                 }
+                                if (
+                                    idList == "eventmacros" &&
+                                    item.name == "urltrusted" &&
+                                    eventmacrosActionType == "macro"
+                                ) {
+                                    return
+                                }
                                 const fieldSetValue = (val: any, update?: boolean) => {
                                     if (!update) item.value = val
                                     setvalidation(validationfn(item))

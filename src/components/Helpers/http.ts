@@ -92,6 +92,28 @@ function silentFetch(uri: string, options?: SilentFetchOptions): void {
         })
 }
 
+function isTrustedEventUrl(value: unknown): boolean {
+    if (typeof value !== "string") return false
+    const trimmed = value.trim()
+    if (!trimmed) return false
+    try {
+        const url = new URL(trimmed)
+        if (url.protocol !== "http:" && url.protocol !== "https:") return false
+        if (url.username !== "" || url.password !== "") return false
+        return true
+    } catch {
+        return false
+    }
+}
+
+function safeSilentFetch(uri: unknown, options?: SilentFetchOptions): void {
+    if (!isTrustedEventUrl(uri)) {
+        console.error(`[safeSilentFetch] rejected untrusted URL: ${String(uri).slice(0, 200)}`)
+        return
+    }
+    silentFetch(uri as string, options)
+}
+
 function isLimitedEnvironment(mode: string): boolean {
     let sitesList = [
         //google / android Captive Portal Detection
@@ -126,5 +148,5 @@ function isLimitedEnvironment(mode: string): boolean {
     return false
 }
 
-export { espHttpURL, getCookie, isLimitedEnvironment, silentFetch }
+export { espHttpURL, getCookie, isLimitedEnvironment, silentFetch, isTrustedEventUrl, safeSilentFetch }
 export type { SilentFetchOptions }

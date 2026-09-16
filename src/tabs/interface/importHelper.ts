@@ -92,13 +92,18 @@ function formatItem(itemData: RawItemData, index: number = -1, origineId: string
         index: index,
         value: []
     }
-    Object.keys(itemData).forEach((key) => {
+    const keys = Object.keys(itemData)
+    if (origineId === "eventmacros" && !keys.includes("urltrusted")) keys.push("urltrusted")
+    keys.forEach((key) => {
         if (key != "id") {
+            const value = key === "urltrusted" && !Object.prototype.hasOwnProperty.call(itemData, key)
+                ? false
+                : itemData[key]
             const newItem: ItemSettingField = {
                 id: `${itemData.id}-${key}`,
                 name: key,
-                value: itemData[key],
-                initial: itemData[key]
+                value,
+                initial: value
             }
             if (index == -1) newItem.newItem = true
             switch (key) {
@@ -294,6 +299,11 @@ function formatItem(itemData: RawItemData, index: number = -1, origineId: string
                     newItem.append = "S114"
                     newItem.label = "S231"
                     newItem.help = "S235"
+                    break
+                case "urltrusted":
+                    newItem.type = "boolean"
+                    newItem.label = "Trusted webhook (confirm to auto-fire)"
+                    newItem.help = "Only URL rules with this enabled can fire automatically; imported rules start untrusted."
                     break
                 case "enabled":
                     newItem.type = "boolean"
