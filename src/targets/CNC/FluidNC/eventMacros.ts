@@ -20,7 +20,8 @@
 // this file's own ingestStatus/ingestAlarmFastPath being called from
 // TargetContext.tsx.
 
-import { silentFetch, isTrustedEventUrl } from "../../../components/Helpers"
+import { silentFetch } from "../../../components/Helpers"
+import { evaluateFireGate, resolveCurrentRule } from "./eventMacroGate"
 import { useUiContextFn } from "../../../contexts"
 import type { MacroType } from "./macroExecution"
 
@@ -136,7 +137,14 @@ function findMacroById(macroid: string): { action: string; type: MacroType } | u
     return { action: String(flat.action || ""), type: flat.type as MacroType }
 }
 
-function tryFire(rule: Rule): void {
+function tryFire(snapshot: Rule): void {
+    // The settle/cooldown/in-flight callbacks that call this hold the rule
+    // snapshot from dispatch time. Re-read the rule by id from CURRENT
+    // settings so a rule deleted, disabled, re-pointed to another event, or
+    // edited (URL / trust / macro) while a timer was pending never fires its
+    // stale version.
+    const rule = resolveCurrentRule(snapshot, readEnabledRules())
+    if (!rule) return                                  // removed/disabled/re-pointed meanwhile - drop silently
     if (!conditionHolds(rule.event)) return           // reverted since the timer was armed - drop silently
     const rt = getRuntime(rule.id)
 
@@ -154,25 +162,24 @@ function tryFire(rule: Rule): void {
         return
     }
 
-    if (rule.actiontype === "macro") {
-        fireMacro(rule, rt, now)
+    // Single gate for every action kind: connection state, URL validity and
+    // explicit per-rule trust - including saved macros of type URI/URI_SILENT,
+    // which are URL actions too. See eventMacroGate.ts.
+    const decision = evaluateFireGate(rule, { connected: trackedConnected, findMacro: findMacroById })
+    if (decision.fire === false) {
+        const log = decision.loud ? console.error : console.log
+        log(`[EventMacros] "${rule.id}": ${decision.reason}, skipped`)
         return
     }
 
-    if (rule.actiontype === "url") {
-        if (!isTrustedEventUrl(rule.action)) {
-            console.error(`[EventMacros] "${rule.id}": rejected untrusted URL action (needs explicit user trust / valid absolute HTTP(S)): ${String(rule.action).slice(0, 200)}`)
-            return
-        }
-        if (rule.urltrusted !== true) {
-            console.log(`[EventMacros] "${rule.id}": URL rule not explicitly trusted (urltrusted=false/undefined) — skipping auto-fire. Confirm trust in settings to enable.`)
-            return
-        }
+    if (decision.fire === "macro") {
+        fireMacro(rule, rt, now, decision.macro)
+        return
     }
 
     rt.lastFireStart = now
     rt.inFlight = true
-    silentFetch(rule.action, {
+    silentFetch(decision.url, {
         timeoutMs: FETCH_TIMEOUT_MS,
         onSettled: () => {
             rt.inFlight = false
@@ -190,15 +197,8 @@ function tryFire(rule: Rule): void {
 // with no unified "the whole macro settled" signal. Treated as synchronous,
 // like a manual click of the macro's own button: the cooldown floor still
 // applies (via lastFireStart below), but there's nothing to hold inFlight
-// open for.
-function fireMacro(rule: Rule, rt: RuleRuntime, now: number): void {
-    const macro = findMacroById(rule.macroid)
-    if (!macro) {
-        // no silent fallbacks: a rule whose target macro was deleted must be
-        // loud about it, not just quietly do nothing.
-        console.error(`[EventMacros] "${rule.id}": referenced macro "${rule.macroid}" no longer exists, skipped`)
-        return
-    }
+// open for. Macro existence and URL trust were already checked by the gate.
+function fireMacro(rule: Rule, rt: RuleRuntime, now: number, macro: { action: string; type: MacroType }): void {
     if (!macroRunner) {
         console.error(`[EventMacros] "${rule.id}": macro runner not registered yet, skipped`)
         return

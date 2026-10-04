@@ -35,7 +35,7 @@ import { T } from "../../components/Translations"
 import { RefreshCcw, Save, ExternalLink, Flag, Download } from "preact-feather"
 import { Field, FieldGroup } from "../../components/Controls"
 import { exportPreferences, exportPreferencesSection, ExportPreferences, InterfaceSettingsData } from "./exportHelper"
-import { importPreferencesSection, formatPreferences, ImportPreferencesResult } from "./importHelper"
+import { importPreferencesSection, formatPreferences, ImportPreferencesResult, sanitizeImportedEventMacroTrust } from "./importHelper"
 
 // Option for select fields
 interface SelectOption {
@@ -379,6 +379,8 @@ const InterfaceTab = () => {
                         throw new Error("File result is not a string")
                     }
                     const importData = JSON.parse(result)
+                    // an imported file never carries event-macro URL trust in
+                    sanitizeImportedEventMacroTrust(importData.settings)
 
                     const importResult: ImportPreferencesResult =
                         importPreferencesSection(

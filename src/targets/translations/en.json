@@ -255,6 +255,8 @@
     "S250": "Macro to trigger",
     "S251": "No macro exists yet - create one in the Macros panel first.",
     "S252": "With \"Trigger a saved Macro\", the referenced macro runs with its current type and content - including CMD, which sends raw G-code straight to the machine. It's re-read from current settings on every firing, not a frozen copy, so renaming, editing, or deleting it afterwards takes effect immediately (a deleted macro is logged to the console and the rule simply doesn't fire). Macro type URI opens a new browser tab via window.open() - since the event fires without a user click, most browsers' popup blockers will likely block that; prefer URI_SILENT for background HTTP calls instead.",
+    "S253": "Trusted target (confirm to auto-fire)",
+    "S254": "Only rules with this enabled can fire automatically when they call a URL - either directly or by triggering a URL-type macro (URI / URI_SILENT). Imported rules always start untrusted, and changing the URL, the action type or the referenced macro revokes the trust until you confirm it again.",
     "btn+X": "X+",
     "btn-X": "X-",
     "btnHX": "Home X",

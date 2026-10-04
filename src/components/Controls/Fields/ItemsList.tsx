@@ -562,17 +562,47 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                                 ) {
                                     return
                                 }
-                                if (
-                                    idList == "eventmacros" &&
-                                    item.name == "urltrusted" &&
-                                    eventmacrosActionType == "macro"
-                                ) {
-                                    return
-                                }
+                                // urltrusted stays visible for "macro" rules too:
+                                // a rule triggering a URI/URI_SILENT macro is a
+                                // URL action and needs the same explicit trust
+                                // (see targets/CNC/FluidNC/eventMacroGate.ts).
                                 const fieldSetValue = (val: any, update?: boolean) => {
                                     if (!update) item.value = val
                                     setvalidation(validationfn(item))
                                     setValue(completeList, update)
+                                }
+                                // eventmacros only: trust is bound to the exact
+                                // target the user confirmed. Editing the URL,
+                                // the action type or the referenced macro away
+                                // from its saved value revokes it (so a new
+                                // endpoint never auto-fires on an old "yes");
+                                // only when ALL of them are back at their saved
+                                // values is the saved trust restored. Applied
+                                // before fieldSetValue so both changes land in
+                                // the same re-render.
+                                const revokeTrustOnTargetChange = (val: any, update?: boolean) => {
+                                    if (!update) {
+                                        const trustField = value.find(
+                                            (f: FieldItem) => f.name == "urltrusted"
+                                        )
+                                        if (trustField) {
+                                            const targetUnchanged = value
+                                                .filter((f: FieldItem) =>
+                                                    ["actiontype", "action", "macroid"].includes(String(f.name))
+                                                )
+                                                .every((f: FieldItem) =>
+                                                    (f === item ? val : f.value) === f.initial
+                                                )
+                                            trustField.value = targetUnchanged
+                                                ? trustField.initial
+                                                : false
+                                            validationfn(trustField)
+                                        }
+                                    }
+                                }
+                                const trustTargetSetValue = (val: any, update?: boolean) => {
+                                    revokeTrustOnTargetChange(val, update)
+                                    fieldSetValue(val, update)
                                 }
                                 // eventmacros only: switching actiontype live
                                 // doesn't re-run formatItem, so the field that
@@ -588,6 +618,7 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                                 // siblings and re-run validationfn on them so
                                 // their haserror reflects the new mode right away.
                                 const actiontypeSetValue = (val: any, update?: boolean) => {
+                                    revokeTrustOnTargetChange(val, update)
                                     fieldSetValue(val, update)
                                     if (update) return
                                     const actionField = value.find(
@@ -637,7 +668,7 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                                                     useUiContextFn.haptic()
                                                     e.currentTarget.blur()
                                                     if (hasValue) return
-                                                    fieldSetValue(example)
+                                                    trustTargetSetValue(example)
                                                 }}
                                             />
                                         )
@@ -664,7 +695,11 @@ const ItemControl: FunctionalComponent<ItemControlProps> = ({
                                             idList == "eventmacros" &&
                                             item.name == "actiontype"
                                                 ? actiontypeSetValue
-                                                : fieldSetValue
+                                                : idList == "eventmacros" &&
+                                                    (item.name == "action" ||
+                                                        item.name == "macroid")
+                                                  ? trustTargetSetValue
+                                                  : fieldSetValue
                                         }
                                         validation={validation}
                                     />

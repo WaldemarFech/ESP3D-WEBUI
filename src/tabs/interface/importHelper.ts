@@ -302,8 +302,8 @@ function formatItem(itemData: RawItemData, index: number = -1, origineId: string
                     break
                 case "urltrusted":
                     newItem.type = "boolean"
-                    newItem.label = "Trusted webhook (confirm to auto-fire)"
-                    newItem.help = "Only URL rules with this enabled can fire automatically; imported rules start untrusted."
+                    newItem.label = "S253"
+                    newItem.help = "S254"
                     break
                 case "enabled":
                     newItem.type = "boolean"
@@ -410,4 +410,21 @@ function importPreferencesSection(
     return { preferences: currentPreferences, hasErrors };
 }
 
-export { importPreferencesSection, formatPreferences, formatItem }
+/**
+ * Explicit file-import path only (Interface settings -> import a preferences
+ * file): an imported file must never carry event-macro URL trust in with it,
+ * or an imported rule could auto-fire an arbitrary HTTP request without the
+ * user ever confirming it in this UI. Rules loaded from the user's own
+ * already-saved preferences.json (useSettings) do not go through this and
+ * keep their trust. Mutates the raw imported settings object in place.
+ */
+function sanitizeImportedEventMacroTrust(importedSettings: unknown): void {
+    if (!importedSettings || typeof importedSettings !== "object") return
+    const list = (importedSettings as Record<string, unknown>).eventmacros
+    if (!Array.isArray(list)) return
+    list.forEach((item) => {
+        if (item && typeof item === "object") (item as Record<string, unknown>).urltrusted = false
+    })
+}
+
+export { importPreferencesSection, formatPreferences, formatItem, sanitizeImportedEventMacroTrust }
